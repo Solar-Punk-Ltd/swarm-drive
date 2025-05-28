@@ -1,0 +1,30 @@
+{
+  "name": "swarm-sync-cli",
+  "version": "0.1.0",
+  "bin": {
+    "swarm-sync": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "init": "ts-node src/cli.ts init",
+    "sync": "ts-node src/cli.ts sync",
+    "watch": "ts-node src/cli.ts watch --debounce 300"
+  },
+  "dependencies": {
+    "@ethersphere/bee-js": "^9.3.0",
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.5.0",
+    "fast-glob": "^3.2.7",
+    "isomorphic-git": "^1.20.0",
+    "lodash.debounce": "^4.0.8",
+    "mantaray-js": "^1.0.3",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/lodash.debounce": "^4.0.9",
+    "@types/node": "^18.11.18",
+    "@types/yargs": "^17.0.24",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.9.5"
+  }
+}

@@ -1,0 +1,40 @@
+#!/usr/bin/env ts-node
+
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+import { initCmd } from "./commands/init";
+import { syncCmd } from "./commands/sync";
+import { watchCmd } from "./commands/watch";
+import dotenv from "dotenv";
+dotenv.config();
+
+yargs(hideBin(process.argv))
+  .command(
+    "init <localDir> <volumeRef>",
+    "Initialize Swarm Drive",
+    (y) =>
+      y
+        .positional("localDir", { type: "string", describe: "Local folder path" })
+        .positional("volumeRef", { type: "string", describe: "Swarm manifest hash or feed address" }),
+    (argv) => initCmd(argv.localDir as string, argv.volumeRef as string)
+  )
+  .command(
+    "sync",
+    "Sync local folder to Swarm",
+    () => {},
+    () => syncCmd()
+  )
+  .command(
+    "watch",
+    "Watch local folder for changes and sync",
+    (y) =>
+      y.option("debounce", {
+        type: "number",
+        default: 300,
+        describe: "Debounce interval in milliseconds"
+      }),
+    (argv) => watchCmd(argv.debounce as number)
+  )
+  .demandCommand(1, "You need to specify a command")
+  .help()
+  .parse();
