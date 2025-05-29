@@ -10,9 +10,6 @@ import {
 
 const OWNER_STAMP_LABEL = "owner-stamp";
 
-/**
- * Instantiates a Bee HTTP client + picks out your "owner-stamp" batch.
- */
 export async function createBeeClient(
   apiUrl: string,
   signerKey: string
@@ -36,10 +33,6 @@ export async function createBeeClient(
   return { bee, ownerBatch };
 }
 
-/**
- * Download (or init) a MantarayNode, apply an upload or delete,
- * then re-upload the marshaled node and return its new manifest reference.
- */
 export async function updateManifest(
   bee: Bee,
   batchId: BatchId,
@@ -83,26 +76,19 @@ export async function updateManifest(
   return result.reference.toString();
 }
 
-/**
- * List all files currently in the Swarm manifest.
- * If the manifestRef doesn’t exist (404), we return [] rather than throw.
- */
 export async function listRemoteFiles(
   bee: Bee,
   manifestRef: string | undefined
 ): Promise<string[]> {
   if (!manifestRef) return [];
   let node: MantarayNode;
-  // **DIAGNOSTIC LOGGING START**
   console.log("⏳ Checking existence of manifest", manifestRef);
   try {
-    // try to pull raw bytes
     const raw = await bee.downloadData(new BeeReference(manifestRef));
     console.log(`✅ raw manifest is ${raw.toUint8Array().length} bytes`);
   } catch (e: any) {
     console.warn(`⚠️  raw downloadData failed:`, e.status, e.message);
   }
-  // **DIAGNOSTIC LOGGING END**
 
   try {
     const manifestRefObj = new BeeReference(manifestRef);
@@ -117,9 +103,6 @@ export async function listRemoteFiles(
   return node.collect().map((n) => n.fullPathString);
 }
 
-/**
- * Download one file’s raw bytes from the manifest by its path.
- */
 export async function downloadRemoteFile(
   bee: Bee,
   manifestRef: string,

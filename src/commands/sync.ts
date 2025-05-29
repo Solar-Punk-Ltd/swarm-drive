@@ -15,28 +15,23 @@ export async function syncCmd() {
   const cfg = await loadConfig();
   const state: State = await loadState();
 
-  // 0) Our “current” manifest (undefined if never pushed)
   let manifestRef = state.lastManifest;
 
-  // 1) Init Bee once
   const { bee, ownerBatch } = await createBeeClient(
     "http://localhost:1633",
     process.env.BEE_SIGNER_KEY!
   );
   const batchID = ownerBatch.batchID;
 
-  // 2) Pull full directory‐listing from Swarm (empty on first run)
   const remoteListing = manifestRef
     ? await listRemoteFiles(bee, manifestRef)
     : [];
 
-  // 3) Glob your local folder
   const localListing = await fg("**/*", {
     cwd: cfg.localDir,
     onlyFiles: true,
   });
 
-  // 4) Compute diffs
   const toUpload = localListing.filter((f) => !remoteListing.includes(f));
   const toDelete = manifestRef
     ? remoteListing.filter((f) => !localListing.includes(f))
@@ -47,7 +42,6 @@ export async function syncCmd() {
     return;
   }
 
-  // 5) Apply uploads
   for (const rel of toUpload) {
     console.log("UPLOAD:", rel);
     const abs = path.join(cfg.localDir, rel);
@@ -61,7 +55,6 @@ export async function syncCmd() {
     );
   }
 
-  // 6) Apply deletions
   for (const rel of toDelete) {
     console.log("DELETE:", rel);
     const abs = path.join(cfg.localDir, rel);
@@ -75,7 +68,6 @@ export async function syncCmd() {
     );
   }
 
-  // 7) Persist only the new manifest pointer + timestamp
   const newState: State = {
     lastManifest: manifestRef!,
     lastSync: new Date().toISOString(),
