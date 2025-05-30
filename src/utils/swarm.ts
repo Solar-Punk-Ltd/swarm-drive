@@ -103,22 +103,40 @@ export async function listRemoteFiles(
   return node.collect().map((n) => n.fullPathString);
 }
 
+export async function listRemoteFilesMap(
+  bee: Bee,
+  manifestRef: string
+): Promise<Record<string, string>> {
+  const manifestRefObj = new BeeReference(manifestRef);
+  const node = await MantarayNode.unmarshal(bee, manifestRefObj);
+  await node.loadRecursively(bee);
+
+  // collectAndMap() returns { "/foo.txt": "<ref>", "/bar/baz.js": "<ref>", … }
+  const raw = node.collectAndMap();
+  const out: Record<string, string> = {};
+
+  for (const [p, ref] of Object.entries(raw)) {
+    // strip leading slash if present
+    const key = p.startsWith("/") ? p.slice(1) : p;
+    out[key] = ref.toString();
+  }
+
+  return out;
+}
+
 export async function downloadRemoteFile(
   bee: Bee,
   manifestRef: string,
   prefix: string
 ): Promise<Uint8Array> {
-  const manifestRefObj = new BeeReference(manifestRef);
-  const node = await MantarayNode.unmarshal(bee, manifestRefObj);
+  const node = await MantarayNode.unmarshal(bee, manifestRef);
   await node.loadRecursively(bee);
-
   const leaf = node.find(prefix);
   if (!leaf) {
     throw new Error(`Path "${prefix}" not found in manifest ${manifestRef}`);
   }
-
+  // targetAddress is a Uint8Array
   const ref = new BeeReference(leaf.targetAddress);
-  const res = await bee.downloadFile(ref);
-
-  return res.data.toUint8Array();
+  const data = await bee.downloadData(ref);
+  return data.toUint8Array();
 }
