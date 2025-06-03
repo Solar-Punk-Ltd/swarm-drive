@@ -1,5 +1,3 @@
-#!/usr/bin/env ts-node
-
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { initCmd } from "./commands/init";
@@ -10,13 +8,14 @@ dotenv.config();
 
 yargs(hideBin(process.argv))
   .command(
-    "init <localDir> <volumeRef>",
+    "init <localDir>",
     "Initialize Swarm Drive",
     (y) =>
-      y
-        .positional("localDir", { type: "string", describe: "Local folder path" })
-        .positional("volumeRef", { type: "string", describe: "Swarm manifest hash or feed address" }),
-    (argv) => initCmd(argv.localDir as string, argv.volumeRef as string)
+      y.positional("localDir", {
+        type: "string",
+        describe: "Local folder path"
+      }),
+    (argv) => initCmd(argv.localDir as string)
   )
   .command(
     "sync",

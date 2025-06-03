@@ -1,7 +1,5 @@
 export interface Config {
   localDir: string;
-  volumeRef: string;
-  lastManifest?: string;
   watchIntervalMinutes?: number;
 }
 

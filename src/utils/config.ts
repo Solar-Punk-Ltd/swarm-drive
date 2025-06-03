@@ -6,8 +6,6 @@ const CONFIG_FILE = ".swarm-sync.json";
 
 const DEFAULT_CONFIG: Config & { lastSync?: string } = {
   localDir: "",
-  volumeRef: "",
-  lastManifest: "",
   watchIntervalMinutes: 10,
   lastSync: "",
 };

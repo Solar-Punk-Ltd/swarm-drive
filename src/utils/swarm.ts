@@ -5,15 +5,18 @@ import {
   PostageBatch,
   BatchId,
   MantarayNode,
+  FeedIndex,
+  Topic,
   Reference as BeeReference,
 } from "@ethersphere/bee-js";
+import { SWARM_ZERO_ADDRESS } from "./constants";
 
-const OWNER_STAMP_LABEL = "owner-stamp";
+const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
 
 export async function createBeeClient(
   apiUrl: string,
   signerKey: string
-): Promise<{ bee: Bee; ownerBatch: PostageBatch }> {
+): Promise<{ bee: Bee; swarmDriveBatch: PostageBatch }> {
   if (!signerKey.startsWith("0x")) {
     throw new Error("BEE_SIGNER_KEY must start with 0x");
   }
@@ -21,16 +24,18 @@ export async function createBeeClient(
   const bee = new Bee(apiUrl, { signer });
 
   const allBatches = await bee.getAllPostageBatch();
-  const ownerBatch = allBatches.find((b) => b.label === OWNER_STAMP_LABEL);
-  if (!ownerBatch) {
+  const swarmDriveBatch = allBatches.find(
+    (b) => b.label === SWARM_DRIVE_STAMP_LABEL
+  );
+  if (!swarmDriveBatch) {
     throw new Error(
-      `No owner-stamp found (label="${OWNER_STAMP_LABEL}").\n` +
-      `Please run:\n` +
-      `  swarm-cli stamp buy --amount <amt> --depth <depth> --label ${OWNER_STAMP_LABEL}`
+      `No swarm-drive-stamp found (label="${SWARM_DRIVE_STAMP_LABEL}").\n` +
+        `Please run:\n` +
+        `  swarm-cli stamp buy --amount <amt> --depth <depth> --label ${SWARM_DRIVE_STAMP_LABEL}`
     );
   }
 
-  return { bee, ownerBatch };
+  return { bee, swarmDriveBatch };
 }
 
 export async function updateManifest(
@@ -47,14 +52,14 @@ export async function updateManifest(
     try {
       const manifestRefObj = new BeeReference(manifestRef);
       node = await MantarayNode.unmarshal(bee, manifestRefObj);
-      await node.loadRecursively(bee);
-    } catch (err: any) {
-      if (err.status === 404) {
-        console.debug(`No existing manifest at ${manifestRef}, starting new node.`);
-        node = new MantarayNode();
-      } else {
-        throw err;
+      try {
+        await node.loadRecursively(bee);
+      } catch {
+        // If the old manifestRef no longer loads, start fresh
+        throw new Error("invalid version hash");
       }
+    } catch {
+      node = new MantarayNode();
     }
   } else {
     node = new MantarayNode();
@@ -63,64 +68,42 @@ export async function updateManifest(
   if (remove) {
     try {
       node.removeFork(prefix);
-    } catch (err: any) {
-      console.debug(`removeFork("${prefix}") no-op: ${err.message}`);
+    } catch {
+      // ignore if the fork didn’t exist
     }
   } else {
     const data = await fs.readFile(localPath);
-    const up = await bee.uploadData(batchId, data, { pin: true });
-    node.addFork(prefix, up.reference.toString());
+    const uploadRes = await bee.uploadData(batchId, data, { pin: true });
+    node.addFork(prefix, uploadRes.reference.toString());
   }
 
-  const result = await node.saveRecursively(bee, batchId, { pin: true });
-  return result.reference.toString();
-}
-
-export async function listRemoteFiles(
-  bee: Bee,
-  manifestRef: string | undefined
-): Promise<string[]> {
-  if (!manifestRef) return [];
-  let node: MantarayNode;
-  console.log("⏳ Checking existence of manifest", manifestRef);
-  try {
-    const raw = await bee.downloadData(new BeeReference(manifestRef));
-    console.log(`✅ raw manifest is ${raw.toUint8Array().length} bytes`);
-  } catch (e: any) {
-    console.warn(`⚠️  raw downloadData failed:`, e.status, e.message);
-  }
-
-  try {
-    const manifestRefObj = new BeeReference(manifestRef);
-    node = await MantarayNode.unmarshal(bee, manifestRefObj);
-    await node.loadRecursively(bee);
-  } catch (err: any) {
-    if (err.status === 404) {
-      return [];
-    }
-    throw err;
-  }
-  return node.collect().map((n) => n.fullPathString);
+  const saved = await node.saveRecursively(bee, batchId, { pin: true });
+  return saved.reference.toString();
 }
 
 export async function listRemoteFilesMap(
   bee: Bee,
   manifestRef: string
 ): Promise<Record<string, string>> {
-  const manifestRefObj = new BeeReference(manifestRef);
-  const node = await MantarayNode.unmarshal(bee, manifestRefObj);
-  await node.loadRecursively(bee);
+  let node: MantarayNode;
+  try {
+    const manifestRefObj = new BeeReference(manifestRef);
+    node = await MantarayNode.unmarshal(bee, manifestRefObj);
+  } catch {
+    throw new Error("invalid version hash");
+  }
+  try {
+    await node.loadRecursively(bee);
+  } catch {
+    throw new Error("invalid version hash");
+  }
 
-  // collectAndMap() returns { "/foo.txt": "<ref>", "/bar/baz.js": "<ref>", … }
   const raw = node.collectAndMap();
   const out: Record<string, string> = {};
-
   for (const [p, ref] of Object.entries(raw)) {
-    // strip leading slash if present
     const key = p.startsWith("/") ? p.slice(1) : p;
     out[key] = ref.toString();
   }
-
   return out;
 }
 
@@ -129,14 +112,82 @@ export async function downloadRemoteFile(
   manifestRef: string,
   prefix: string
 ): Promise<Uint8Array> {
-  const node = await MantarayNode.unmarshal(bee, manifestRef);
-  await node.loadRecursively(bee);
+  let node: MantarayNode;
+  try {
+    const manifestRefObj = new BeeReference(manifestRef);
+    node = await MantarayNode.unmarshal(bee, manifestRefObj);
+  } catch {
+    throw new Error("invalid version hash");
+  }
+  try {
+    await node.loadRecursively(bee);
+  } catch {
+    throw new Error("invalid version hash");
+  }
+
   const leaf = node.find(prefix);
   if (!leaf) {
     throw new Error(`Path "${prefix}" not found in manifest ${manifestRef}`);
   }
-  // targetAddress is a Uint8Array
   const ref = new BeeReference(leaf.targetAddress);
   const data = await bee.downloadData(ref);
   return data.toUint8Array();
+}
+
+/**
+ * Attempt one “latest” download; if that fails or is not 32 bytes,
+ * fall back once to index=0.  Return a valid 32-byte ref string or undefined.
+ */
+export async function readDriveFeed(
+  bee: Bee,
+  topic: Topic,
+  ownerAddress: string
+): Promise<string | undefined> {
+  const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
+
+  // 1) Try “latest” (no index)
+  try {
+    const msg = await reader.download();
+    const raw = msg.payload.toUint8Array();
+    if (raw.byteLength === 32) {
+      const ref = new BeeReference(raw);
+      if (!ref.equals(SWARM_ZERO_ADDRESS)) {
+        return ref.toString();
+      }
+      return undefined;
+    }
+  } catch {
+    // ignore, fall through to index=0 below
+  }
+
+  // 2) Fallback to index=0
+  try {
+    const msg0 = await reader.download({ index: FeedIndex.fromBigInt(0n) });
+    const raw0 = msg0.payload.toUint8Array();
+    if (raw0.byteLength === 32) {
+      const ref0 = new BeeReference(raw0);
+      if (!ref0.equals(SWARM_ZERO_ADDRESS)) {
+        return ref0.toString();
+      }
+      return undefined;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Neither “latest” nor index=0 gave a 32-byte reference → return undefined
+  return undefined;
+}
+
+export async function writeDriveFeed(
+  bee: Bee,
+  topic: Topic,
+  ownerBatch: BatchId,
+  manifestRef: string,
+  index: bigint = 0n
+): Promise<void> {
+  const writer = bee.makeFeedWriter(topic.toUint8Array(), bee.signer!);
+  await writer.uploadReference(ownerBatch, new BeeReference(manifestRef), {
+    index: FeedIndex.fromBigInt(index),
+  });
 }

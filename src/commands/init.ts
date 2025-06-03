@@ -1,10 +1,9 @@
 import path from "path";
 import fs from "fs/promises";
-import git from "isomorphic-git";
 import { Config } from "../types";
 import { saveConfig } from "../utils/config";
 
-export async function initCmd(localDir: string, volumeRef: string) {
+export async function initCmd(localDir: string) {
   try {
     const stat = await fs.stat(localDir);
     if (!stat.isDirectory()) throw new Error("Not a directory");
@@ -13,10 +12,10 @@ export async function initCmd(localDir: string, volumeRef: string) {
     process.exit(1);
   }
 
-  const cfg: Config = { localDir, volumeRef };
+  const cfg: Config = { localDir };
   await saveConfig(cfg);
 
-  await fs.writeFile(path.resolve(".swarm-state.json"), JSON.stringify({}), "utf-8");
+  await fs.writeFile(path.resolve(".swarm-sync-state.json"), JSON.stringify({}, null, 2), "utf-8");
 
   console.log(`Configuration saved to .swarm-sync.json, state cleared`);
 }
