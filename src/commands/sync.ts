@@ -1,5 +1,3 @@
-// src/commands/sync.ts
-
 import path from "path";
 import fs from "fs/promises";
 import fg from "fast-glob";
