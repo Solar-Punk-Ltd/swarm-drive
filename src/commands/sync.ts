@@ -1,3 +1,5 @@
+// src/commands/sync.ts
+
 import path from "path";
 import fs from "fs/promises";
 import fg from "fast-glob";
@@ -17,7 +19,7 @@ export async function syncCmd() {
   console.log("[syncCmd] Starting sync…");
 
   const cfg = await loadConfig();
-  let state = await loadState();
+  const state = await loadState();
   console.log("[syncCmd] Loaded config:", cfg);
   console.log("[syncCmd] Loaded state:", state);
 
@@ -30,49 +32,15 @@ export async function syncCmd() {
   console.log("[syncCmd] Bee client ready, batchID:", batchID);
   console.log("[syncCmd] Owner address:", ownerAddress);
 
-  let manifestRef: string | undefined = undefined;
-  let lastFeedIndex: bigint = 0n;
-  let prevFiles: string[] = [];
-
-  if (state.lastManifest) {
-    console.log(`[syncCmd] State has lastManifest = ${state.lastManifest}`);
-    try {
-      const testMap = await listRemoteFilesMap(bee, state.lastManifest);
-      console.log(
-        "[syncCmd] listRemoteFilesMap(state.lastManifest) succeeded, keys:",
-        Object.keys(testMap)
-      );
-      if (Object.keys(testMap).length > 0) {
-        manifestRef = state.lastManifest;
-        lastFeedIndex = state.lastFeedIndex ? BigInt(state.lastFeedIndex) : 0n;
-        prevFiles = state.lastFiles || [];
-      } else {
-        console.log(
-          "[syncCmd] state.lastManifest pointed at an empty directory → first-ever"
-        );
-        manifestRef = undefined;
-        lastFeedIndex = 0n;
-        prevFiles = [];
-      }
-    } catch (err) {
-      console.log(
-        "⚠️  [syncCmd] listRemoteFilesMap(state.lastManifest) threw:",
-        (err as Error).message
-      );
-      manifestRef = undefined;
-      lastFeedIndex = 0n;
-      prevFiles = [];
-    }
-  } else {
-    console.log("[syncCmd] No state.lastManifest → first-ever");
-    manifestRef = undefined;
-    lastFeedIndex = 0n;
-    prevFiles = [];
-  }
+  // Initialize from state
+  let manifestRef: string | undefined = state.lastManifest;
+  const lastFeedIndex: bigint = state.lastFeedIndex ? BigInt(state.lastFeedIndex) : 0n;
+  const prevFiles: string[] = state.lastFiles || [];
 
   console.log("[syncCmd] Using manifestRef =", manifestRef);
   console.log("[syncCmd] Using lastFeedIndex =", lastFeedIndex);
 
+  // List local files
   const localFiles = await fg("**/*", {
     cwd: cfg.localDir,
     onlyFiles: true,
@@ -80,8 +48,8 @@ export async function syncCmd() {
   console.log("[syncCmd] localFiles:", localFiles);
   console.log("[syncCmd] prevFiles:", prevFiles);
 
+  // Build remoteMap
   let remoteMap: Record<string, string> = {};
-
   if (manifestRef) {
     try {
       remoteMap = await listRemoteFilesMap(bee, manifestRef);
@@ -90,9 +58,11 @@ export async function syncCmd() {
         Object.keys(remoteMap)
       );
     } catch (err) {
-      const msg = (err as Error).message;
-      console.log(`⚠️  [syncCmd] listRemoteFilesMap(manifestRef) threw:`, msg);
-
+      console.log(
+        "⚠️  [syncCmd] listRemoteFilesMap(manifestRef) threw:",
+        (err as Error).message
+      );
+      // recovery if localFiles match prevFiles
       const sameSet =
         prevFiles.length === localFiles.length &&
         prevFiles.every((f) => localFiles.includes(f));
@@ -105,6 +75,7 @@ export async function syncCmd() {
       } else {
         console.log("[syncCmd] Unable to recover remoteMap → treating as empty");
         remoteMap = {};
+        manifestRef = undefined;
       }
     }
   } else {
@@ -114,6 +85,7 @@ export async function syncCmd() {
   const remoteFiles = Object.keys(remoteMap);
   console.log("[syncCmd] remoteFiles:", remoteFiles);
 
+  // Determine differences
   const toPull = remoteFiles.filter(
     (f) => !localFiles.includes(f) && !prevFiles.includes(f)
   );
@@ -123,13 +95,14 @@ export async function syncCmd() {
   const toAdd = localFiles.filter((f) => !remoteFiles.includes(f));
 
   const toModify: string[] = [];
+  // Only attempt to compare contents if downloadRemoteFile returns a Buffer
   for (const f of localFiles.filter((f) => remoteMap[f])) {
     const abs = path.join(cfg.localDir, f);
     const [lb, rb] = await Promise.all([
       fs.readFile(abs),
       downloadRemoteFile(bee, manifestRef!, f),
     ]);
-    if (!Buffer.from(lb).equals(Buffer.from(rb))) {
+    if (rb instanceof Buffer && !Buffer.from(lb).equals(rb)) {
       toModify.push(f);
     }
   }
@@ -139,6 +112,7 @@ export async function syncCmd() {
   console.log("[syncCmd] toAdd:", toAdd);
   console.log("[syncCmd] toModify:", toModify);
 
+  // Nothing to do?
   if (
     toPull.length === 0 &&
     toDeleteRemote.length === 0 &&
@@ -149,6 +123,7 @@ export async function syncCmd() {
     return;
   }
 
+  // Pull remote‐only files
   for (const f of toPull) {
     console.log("⤵️  [syncCmd] PULL NEW REMOTE ⟶ LOCAL:", f);
     const bytes = await downloadRemoteFile(bee, manifestRef!, f);
@@ -158,6 +133,7 @@ export async function syncCmd() {
     localFiles.push(f);
   }
 
+  // Upload new local files
   for (const f of toAdd) {
     console.log("➕ [syncCmd] UPLOAD LOCAL ⟶ REMOTE:", f);
     const abs = path.join(cfg.localDir, f);
@@ -165,6 +141,7 @@ export async function syncCmd() {
     console.log("[syncCmd] After add, manifestRef =", manifestRef);
   }
 
+  // Update modified files
   for (const f of toModify) {
     console.log("🔄 [syncCmd] REPLACE REMOTE CONTENT:", f);
     manifestRef = await updateManifest(
@@ -182,6 +159,7 @@ export async function syncCmd() {
     console.log("[syncCmd] After re-add, manifestRef =", manifestRef);
   }
 
+  // Delete remote files that no longer exist locally
   for (const f of toDeleteRemote) {
     console.log("🗑️  [syncCmd] DELETE REMOTE FORMERLY–LOCAL:", f);
     manifestRef = await updateManifest(
@@ -195,6 +173,7 @@ export async function syncCmd() {
     console.log("[syncCmd] After delete, manifestRef =", manifestRef);
   }
 
+  // Wait until the new manifest is loadable
   if (manifestRef) {
     console.log(`[syncCmd] Waiting for manifest ${manifestRef} to be loadable…`);
     const startWait = Date.now();
@@ -220,6 +199,7 @@ export async function syncCmd() {
   await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, manifestRef!, lastFeedIndex);
   console.log(`[syncCmd] Updated drive feed@${lastFeedIndex} → ${manifestRef}`);
 
+  // Pause briefly before saving state
   await new Promise((r) => setTimeout(r, 500));
 
   const nextFeedIndex = lastFeedIndex + 1n;

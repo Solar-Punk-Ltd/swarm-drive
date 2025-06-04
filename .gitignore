@@ -7,6 +7,4 @@ data/
 node_modules/
 /*bee*.log
 /*bee*.pid
-bee*.log
-bee*.pid
 bee-dev

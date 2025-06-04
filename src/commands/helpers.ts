@@ -3,11 +3,12 @@ import { listRemoteFilesMap, makeBareBeeClient, readDriveFeed } from "../utils/s
 import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants";
 
 async function makeBeeWithoutStamp(): Promise<Bee> {
-  const signerKey = process.env.BEE_SIGNER_KEY!;
-  if (!signerKey || !signerKey.startsWith("0x")) {
-    throw new Error(
-      "🚨 BEE_SIGNER_KEY must be set in your environment and start with 0x"
-    );
+  const signerKey = process.env.BEE_SIGNER_KEY;
+  if (!signerKey) {
+    throw new Error("🚨 BEE_SIGNER_KEY must be set in your environment");
+  }
+  if (!signerKey.startsWith("0x")) {
+    throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment");
   }
   return new Bee("http://localhost:1633", {
     signer: new PrivateKey(signerKey),
@@ -15,10 +16,14 @@ async function makeBeeWithoutStamp(): Promise<Bee> {
 }
 
 export async function feedGet(indexArg?: number): Promise<void> {
-  const signerKey = process.env.BEE_SIGNER_KEY!;
+  const signerKey = process.env.BEE_SIGNER_KEY;
+  if (!signerKey) {
+    throw new Error("🚨 BEE_SIGNER_KEY must be set in your environment");
+  }
   if (!signerKey.startsWith("0x")) {
     throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment");
   }
+
   const bee = new Bee("http://localhost:1633", {
     signer: new PrivateKey(signerKey),
   });
@@ -29,6 +34,7 @@ export async function feedGet(indexArg?: number): Promise<void> {
       const reader = bee.makeFeedReader(DRIVE_FEED_TOPIC.toUint8Array(), ownerAddress);
       const msg = await reader.download({ index: indexArg });
       const raw = msg.payload.toUint8Array();
+
       if (raw.byteLength === 32) {
         const hex = Buffer.from(raw).toString("hex");
         if (hex === SWARM_ZERO_ADDRESS.toString()) {
@@ -37,11 +43,14 @@ export async function feedGet(indexArg?: number): Promise<void> {
           console.log(`Feed@${indexArg} → ${hex}`);
         }
       } else {
-        console.log(`Feed@${indexArg} → payload length ${raw.byteLength}, not a 32-byte reference.`);
+        console.log(
+          `Feed@${indexArg} → payload length ${raw.byteLength}, not a 32-byte reference.`
+        );
       }
     } catch (err: any) {
       console.error(`Failed to read feed@${indexArg}:`, err.message || err);
       process.exit(1);
+      throw new Error("Process exited with code: 1");
     }
     return;
   }
@@ -56,15 +65,17 @@ export async function feedGet(indexArg?: number): Promise<void> {
   } catch (err: any) {
     console.error("Failed to read feed@latest:", err.message || err);
     process.exit(1);
+    throw new Error("Process exited with code: 1");
   }
 }
 
 export async function feedLs(): Promise<void> {
-  await feedGet();
+  await (module.exports as any).feedGet(undefined);
 }
 
 export async function manifestLs(manifestRef: string): Promise<void> {
   const bee = await makeBeeWithoutStamp();
+
   try {
     const map = await listRemoteFilesMap(bee, manifestRef);
     const files = Object.keys(map);
@@ -79,9 +90,9 @@ export async function manifestLs(manifestRef: string): Promise<void> {
   } catch (err: any) {
     console.error(`Failed to list manifest ${manifestRef}:`, err.message || err);
     process.exit(1);
+    throw new Error("Process exited with code: 1");
   }
 }
-
 
 export async function listStamps(): Promise<void> {
   const bee = makeBareBeeClient();
