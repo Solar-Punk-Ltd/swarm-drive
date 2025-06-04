@@ -9,6 +9,7 @@
     "init": "ts-node src/cli.ts init",
     "sync": "ts-node src/cli.ts sync",
     "watch": "ts-node src/cli.ts watch --debounce 300",
+    "schedule": "ts-node src/cli.ts schedule",
     "test": "jest --runInBand"
   },
   "dependencies": {
