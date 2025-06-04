@@ -19,7 +19,6 @@ export async function loadState(): Promise<State> {
     }
     return parsed;
   } catch {
-    // If missing or malformed → start fresh with feedIndex = "0"
     return { lastFeedIndex: "0" };
   }
 }

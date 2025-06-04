@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Compute the absolute directory of this script.
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BEE_DIR="$SCRIPT_DIR/bee-dev"

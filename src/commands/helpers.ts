@@ -1,4 +1,3 @@
-// src/commands/helpers.ts
 import { Bee, PrivateKey } from "@ethersphere/bee-js";
 import { listRemoteFilesMap, makeBareBeeClient, readDriveFeed } from "../utils/swarm";
 import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants";
@@ -15,11 +14,7 @@ async function makeBeeWithoutStamp(): Promise<Bee> {
   });
 }
 
-/**
- * Prints a 32-byte reference from the “latest” feed entry (or from a specific index).
- */
 export async function feedGet(indexArg?: number): Promise<void> {
-  // Build a Bee client + ownerAddress
   const signerKey = process.env.BEE_SIGNER_KEY!;
   if (!signerKey.startsWith("0x")) {
     throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment");
@@ -29,10 +24,8 @@ export async function feedGet(indexArg?: number): Promise<void> {
   });
   const ownerAddress = bee.signer!.publicKey().address().toString();
 
-  // If an explicit index was passed, we bypass “readDriveFeed” and do direct index read:
   if (typeof indexArg === "number") {
     try {
-      // Attempt to read exactly that index
       const reader = bee.makeFeedReader(DRIVE_FEED_TOPIC.toUint8Array(), ownerAddress);
       const msg = await reader.download({ index: indexArg });
       const raw = msg.payload.toUint8Array();
@@ -47,13 +40,12 @@ export async function feedGet(indexArg?: number): Promise<void> {
         console.log(`Feed@${indexArg} → payload length ${raw.byteLength}, not a 32-byte reference.`);
       }
     } catch (err: any) {
-      console.error(`❌ Failed to read feed@${indexArg}:`, err.message || err);
+      console.error(`Failed to read feed@${indexArg}:`, err.message || err);
       process.exit(1);
     }
     return;
   }
 
-  // indexArg is undefined → use our “readDriveFeed” helper, which first tries latest, then falls back to 0.
   try {
     const ref = await readDriveFeed(bee, DRIVE_FEED_TOPIC, ownerAddress);
     if (!ref) {
@@ -62,13 +54,12 @@ export async function feedGet(indexArg?: number): Promise<void> {
       console.log(`Feed@latest → ${ref}`);
     }
   } catch (err: any) {
-    console.error("❌ Failed to read feed@latest:", err.message || err);
+    console.error("Failed to read feed@latest:", err.message || err);
     process.exit(1);
   }
 }
 
 export async function feedLs(): Promise<void> {
-  // Alias of “feedGet() with no indexArg”
   await feedGet();
 }
 
@@ -86,7 +77,7 @@ export async function manifestLs(manifestRef: string): Promise<void> {
       }
     }
   } catch (err: any) {
-    console.error(`❌ Failed to list manifest ${manifestRef}:`, err.message || err);
+    console.error(`Failed to list manifest ${manifestRef}:`, err.message || err);
     process.exit(1);
   }
 }

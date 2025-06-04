@@ -1,5 +1,3 @@
-// src/utils/fs.ts
-
 import fg from "fast-glob";
 import crypto from "crypto";
 import fs from "fs/promises";

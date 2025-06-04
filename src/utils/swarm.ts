@@ -1,4 +1,3 @@
-// src/utils/swarm.ts
 import fs from "fs/promises";
 import {
   Bee,
@@ -14,12 +13,6 @@ import { SWARM_ZERO_ADDRESS } from "./constants";
 
 const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
 
-/**
- * Create a Bee client that simply connects to http://localhost:1633
- * using the private key stored in process.env.BEE_SIGNER_KEY.
- * (This function does NOT check for any postage stamps—it is for “read‐only” actions
- *   like listing stamps, reading feed, listing manifests, etc.)
- */
 export function makeBareBeeClient(): Bee {
   const signerKey = process.env.BEE_SIGNER_KEY!;
   if (!signerKey.startsWith("0x")) {
@@ -30,11 +23,6 @@ export function makeBareBeeClient(): Bee {
   });
 }
 
-/**
- * Create a Bee client AND return the postage batch labeled "swarm-drive-stamp".
- * This is used in any function that needs to write to a Swarm Drive manifest or feed.
- * It will throw if no such stamp is found.
- */
 export async function createBeeClient(
   apiUrl: string,
   signerKey: string
@@ -60,11 +48,6 @@ export async function createBeeClient(
   return { bee, swarmDriveBatch };
 }
 
-/**
- * Add or remove a single file from an existing Mantaray manifest. If remove=false,
- * it will upload data at `localPath` under the key `prefix`. If remove=true, it removes that prefix.
- * Returns the new manifest reference.
- */
 export async function updateManifest(
   bee: Bee,
   batchId: BatchId,
@@ -82,7 +65,6 @@ export async function updateManifest(
       try {
         await node.loadRecursively(bee);
       } catch {
-        // If the old manifestRef no longer loads, start fresh
         throw new Error("invalid version hash");
       }
     } catch {
@@ -96,7 +78,6 @@ export async function updateManifest(
     try {
       node.removeFork(prefix);
     } catch {
-      // ignore if the fork didn't exist
     }
   } else {
     const data = await fs.readFile(localPath);
@@ -108,10 +89,6 @@ export async function updateManifest(
   return saved.reference.toString();
 }
 
-/**
- * Given a Swarm DRV manifest reference, download all of its leaf entries and
- * return a map from filename → 32‐byte reference‐hex.
- */
 export async function listRemoteFilesMap(
   bee: Bee,
   manifestRef: string
@@ -138,10 +115,6 @@ export async function listRemoteFilesMap(
   return out;
 }
 
-/**
- * Download a single file from a Swarm DRV manifest. Looks up `prefix` in the
- * given `manifestRef` and returns the bytes for that file.
- */
 export async function downloadRemoteFile(
   bee: Bee,
   manifestRef: string,
@@ -169,10 +142,6 @@ export async function downloadRemoteFile(
   return data.toUint8Array();
 }
 
-/**
- * Attempt one “latest” feed‐download; if that fails or is not 32 bytes,
- * fall back once to index=0. Return a valid 32‐byte reference‐string or undefined.
- */
 export async function readDriveFeed(
   bee: Bee,
   topic: Topic,
@@ -180,7 +149,6 @@ export async function readDriveFeed(
 ): Promise<string | undefined> {
   const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
 
-  // 1) Try “latest” (no index)
   try {
     const msg = await reader.download();
     const raw = msg.payload.toUint8Array();
@@ -192,10 +160,8 @@ export async function readDriveFeed(
       return undefined;
     }
   } catch {
-    // ignore, fall through to index=0 below
   }
 
-  // 2) Fallback to index=0
   try {
     const msg0 = await reader.download({ index: FeedIndex.fromBigInt(0n) });
     const raw0 = msg0.payload.toUint8Array();
@@ -207,17 +173,11 @@ export async function readDriveFeed(
       return undefined;
     }
   } catch {
-    // ignore
   }
 
-  // Neither “latest” nor index=0 gave a 32‐byte reference → return undefined
   return undefined;
 }
 
-/**
- * Upload a new feed entry (32 bytes) at the given feed‐index. If index is omitted,
- * it defaults to 0. 
- */
 export async function writeDriveFeed(
   bee: Bee,
   topic: Topic,

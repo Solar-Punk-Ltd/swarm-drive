@@ -6,11 +6,9 @@ export async function scheduleCmd(intervalMs: number): Promise<void> {
 
   console.log(`Scheduling sync for "${localDir}" every ${intervalMs} ms…`);
 
-  // Immediately run one sync on startup (optional)
   console.log("Initial run: running sync now…");
   await syncCmd();
 
-  // Then schedule a repeating sync
   setInterval(async () => {
     console.log("Scheduled interval reached: running sync…");
     try {

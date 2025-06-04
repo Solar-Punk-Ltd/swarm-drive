@@ -1,4 +1,3 @@
-// src/cli.ts
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import dotenv from "dotenv";
@@ -76,7 +75,6 @@ yargs(hideBin(process.argv))
     }
   )
 
-  // ───────────── “helper” Commands ─────────────
   .command(
     "stamp-list",
     "List all postage stamps (batch IDs, depths, amounts, labels)",
