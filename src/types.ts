@@ -5,6 +5,5 @@ export interface Config {
 
 export interface State {
   lastSync: string;
-  lastManifest?: string;
   lastFiles?: string[];
 }

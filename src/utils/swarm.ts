@@ -1,3 +1,4 @@
+import inquirer from 'inquirer'
 import fs from "fs/promises";
 import {
   Bee,
@@ -16,7 +17,9 @@ const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
 export function makeBareBeeClient(): Bee {
   const signerKey = process.env.BEE_SIGNER_KEY!;
   if (!signerKey.startsWith("0x")) {
-    throw new Error("🚨 BEE_SIGNER_KEY must be set in your environment and start with 0x");
+    throw new Error(
+      "🚨 BEE_SIGNER_KEY must be set in your environment and start with 0x"
+    );
   }
   return new Bee("http://localhost:1633", {
     signer: new PrivateKey(signerKey),
@@ -27,25 +30,58 @@ export async function createBeeClient(
   apiUrl: string,
   signerKey: string
 ): Promise<{ bee: Bee; swarmDriveBatch: PostageBatch }> {
-  if (!signerKey.startsWith("0x")) {
-    throw new Error("BEE_SIGNER_KEY must start with 0x");
+  if (!signerKey.startsWith('0x')) {
+    throw new Error('BEE_SIGNER_KEY must start with 0x')
   }
-  const signer = new PrivateKey(signerKey);
-  const bee = new Bee(apiUrl, { signer });
+  const bee = new Bee(apiUrl, { signer: new PrivateKey(signerKey) })
 
-  const allBatches = await bee.getAllPostageBatch();
-  const swarmDriveBatch = allBatches.find(
-    (b) => b.label === SWARM_DRIVE_STAMP_LABEL
+  // 2) look for an existing, usable batch
+  let batch = (await bee.getAllPostageBatch()).find(
+    (b) => b.label === SWARM_DRIVE_STAMP_LABEL && b.usable
+  )
+
+  if (!batch) {
+    console.log(`No "${SWARM_DRIVE_STAMP_LABEL}" stamp found.`)
+    const { amount, depth, confirm } = await inquirer.prompt([
+      { name: 'confirm', type: 'confirm', message: 'Buy a new stamp now?' },
+      { name: 'amount',   type: 'input',   message: 'Amount (in BZZ):', default: '100000000000' },
+      { name: 'depth',    type: 'number',  message: 'Depth:',             default: 20 },
+    ])
+    if (!confirm) {
+      throw new Error('Cannot proceed without a postage stamp')
+    }
+    const batchID = await buyStamp(bee, amount, depth, SWARM_DRIVE_STAMP_LABEL)
+    // fetch it back out so we have the full PostageBatch object
+    batch = (await bee.getAllPostageBatch()).find((b) => b.batchID.equals(batchID))!
+  }
+
+  return { bee, swarmDriveBatch: batch }
+}
+
+export async function getOwnerStamp(
+  bee: Bee
+): Promise<PostageBatch | undefined> {
+  const batches = await bee.getAllPostageBatch();
+  return batches.find((b) => b.label === SWARM_DRIVE_STAMP_LABEL && b.usable);
+}
+
+export async function buyStamp(
+  bee: Bee,
+  amount: string | bigint,
+  depth: number,
+  label = SWARM_DRIVE_STAMP_LABEL
+): Promise<BatchId> {
+  const existing = (await bee.getAllPostageBatch()).find(
+    (b) => b.label === label && b.usable
   );
-  if (!swarmDriveBatch) {
-    throw new Error(
-      `No swarm-drive-stamp found (label="${SWARM_DRIVE_STAMP_LABEL}").\n` +
-        `Please run:\n` +
-        `  swarm-cli stamp buy --amount <amt> --depth <depth> --label ${SWARM_DRIVE_STAMP_LABEL}`
-    );
+  if (existing) {
+    return existing.batchID;
   }
-
-  return { bee, swarmDriveBatch };
+  // otherwise create one
+  return await bee.createPostageBatch(amount, depth, {
+    label,
+    waitForUsable: true,
+  });
 }
 
 export async function updateManifest(
@@ -60,14 +96,13 @@ export async function updateManifest(
 
   if (manifestRef) {
     try {
-      const manifestRefObj = new BeeReference(manifestRef);
-      node = await MantarayNode.unmarshal(bee, manifestRefObj);
-      try {
-        await node.loadRecursively(bee);
-      } catch {
-        throw new Error("invalid version hash");
-      }
+      node = await MantarayNode.unmarshal(
+        bee,
+        new BeeReference(manifestRef)
+      );
+      await node.loadRecursively(bee);
     } catch {
+      // invalid hash or missing → start fresh
       node = new MantarayNode();
     }
   } else {
@@ -78,6 +113,7 @@ export async function updateManifest(
     try {
       node.removeFork(prefix);
     } catch {
+      /* ignore */
     }
   } else {
     const data = await fs.readFile(localPath);
@@ -95,12 +131,10 @@ export async function listRemoteFilesMap(
 ): Promise<Record<string, string>> {
   let node: MantarayNode;
   try {
-    const manifestRefObj = new BeeReference(manifestRef);
-    node = await MantarayNode.unmarshal(bee, manifestRefObj);
-  } catch {
-    throw new Error("invalid version hash");
-  }
-  try {
+    node = await MantarayNode.unmarshal(
+      bee,
+      new BeeReference(manifestRef)
+    );
     await node.loadRecursively(bee);
   } catch {
     throw new Error("invalid version hash");
@@ -122,12 +156,10 @@ export async function downloadRemoteFile(
 ): Promise<Uint8Array> {
   let node: MantarayNode;
   try {
-    const manifestRefObj = new BeeReference(manifestRef);
-    node = await MantarayNode.unmarshal(bee, manifestRefObj);
-  } catch {
-    throw new Error("invalid version hash");
-  }
-  try {
+    node = await MantarayNode.unmarshal(
+      bee,
+      new BeeReference(manifestRef)
+    );
     await node.loadRecursively(bee);
   } catch {
     throw new Error("invalid version hash");
@@ -149,30 +181,32 @@ export async function readDriveFeed(
 ): Promise<string | undefined> {
   const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
 
+  // 1) Try “latest” (no index) → this returns the highest-written slot
   try {
-    const msg = await reader.download();
+    const msg = await reader.download(); // latest
     const raw = msg.payload.toUint8Array();
-    if (raw.byteLength === 32) {
+    if (raw.length === 32) {
       const ref = new BeeReference(raw);
       if (!ref.equals(SWARM_ZERO_ADDRESS)) {
         return ref.toString();
       }
-      return undefined;
     }
   } catch {
+    // no latest entry yet or other error, we’ll fall back…
   }
 
+  // 2) Fallback: try slot 0 explicitly
   try {
     const msg0 = await reader.download({ index: FeedIndex.fromBigInt(0n) });
     const raw0 = msg0.payload.toUint8Array();
-    if (raw0.byteLength === 32) {
+    if (raw0.length === 32) {
       const ref0 = new BeeReference(raw0);
       if (!ref0.equals(SWARM_ZERO_ADDRESS)) {
         return ref0.toString();
       }
-      return undefined;
     }
   } catch {
+    // still nothing
   }
 
   return undefined;
@@ -189,4 +223,34 @@ export async function writeDriveFeed(
   await writer.uploadReference(ownerBatch, new BeeReference(manifestRef), {
     index: FeedIndex.fromBigInt(index),
   });
+}
+
+export async function readFeedIndex(
+  bee: Bee,
+  topic: Topic,
+  ownerAddress: string
+): Promise<bigint> {
+  const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
+  // first see if slot 0 exists
+  try {
+    await reader.download({ index: FeedIndex.fromBigInt(0n) });
+  } catch (err: any) {
+    if (err.status === 404) {
+      return -1n;    // truly empty
+    }
+    throw err;
+  }
+  // slot 0 is there, so probe upward
+  let idx = 1n;
+  while (true) {
+    try {
+      await reader.download({ index: FeedIndex.fromBigInt(idx) });
+      idx++;
+    } catch (err: any) {
+      if (err.status === 404) {
+        return idx - 1n;
+      }
+      throw err;
+    }
+  }
 }

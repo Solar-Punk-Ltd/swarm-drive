@@ -1,220 +1,165 @@
-import path from "path";
-import fs from "fs/promises";
-import fg from "fast-glob";
+import path from "path"
+import fs from "fs/promises"
+import fg from "fast-glob"
 
 import {
+  Bee,
+  FeedIndex,
+  Reference as BeeReference,
+} from "@ethersphere/bee-js"
+import {
   createBeeClient,
-  updateManifest,
-  listRemoteFilesMap,
   downloadRemoteFile,
+  listRemoteFilesMap,
+  updateManifest,
   writeDriveFeed,
-} from "../utils/swarm";
-import { loadConfig } from "../utils/config";
-import { loadState, saveState } from "../utils/state";
-import { DRIVE_FEED_TOPIC } from "../utils/constants";
+  readFeedIndex,
+} from "../utils/swarm"
+import { loadConfig } from "../utils/config"
+import { loadState, saveState } from "../utils/state"
+import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants"
 
 export async function syncCmd() {
-  console.log("[syncCmd] Starting sync…");
+  console.log("[syncCmd] Starting sync…")
 
-  const cfg = await loadConfig();
-  const state = await loadState();
-  console.log("[syncCmd] Loaded config:", cfg);
-  console.log("[syncCmd] Loaded state:", state);
+  // 1️⃣  Load config + previous snapshot
+  const cfg     = await loadConfig()
+  const state   = await loadState()
+  const prevFiles = state.lastFiles || []
+  console.log("[syncCmd] Loaded state:", state)
 
+  // 2️⃣  Connect to Bee
   const { bee, swarmDriveBatch } = await createBeeClient(
     "http://localhost:1633",
     process.env.BEE_SIGNER_KEY!
-  );
-  const batchID = swarmDriveBatch.batchID;
-  const ownerAddress = bee.signer!.publicKey().address().toString();
-  console.log("[syncCmd] Bee client ready, batchID:", batchID);
-  console.log("[syncCmd] Owner address:", ownerAddress);
+  )
+  const batchID      = swarmDriveBatch.batchID
+  const ownerAddress = bee.signer!.publicKey().address().toString()
+  console.log("[syncCmd] Bee ready → owner:", ownerAddress)
 
-  // Initialize from state
-  let manifestRef: string | undefined = state.lastManifest;
-  const lastFeedIndex: bigint = state.lastFeedIndex ? BigInt(state.lastFeedIndex) : 0n;
-  const prevFiles: string[] = state.lastFiles || [];
+  // 3️⃣  Figure out the last feed index & fetch that manifest
+  const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, ownerAddress)
+  console.log("[syncCmd] feed@latest index →", lastIndex)
 
-  console.log("[syncCmd] Using manifestRef =", manifestRef);
-  console.log("[syncCmd] Using lastFeedIndex =", lastFeedIndex);
-
-  // List local files
-  const localFiles = await fg("**/*", {
-    cwd: cfg.localDir,
-    onlyFiles: true,
-  });
-  console.log("[syncCmd] localFiles:", localFiles);
-  console.log("[syncCmd] prevFiles:", prevFiles);
-
-  // Build remoteMap
-  let remoteMap: Record<string, string> = {};
-  if (manifestRef) {
-    try {
-      remoteMap = await listRemoteFilesMap(bee, manifestRef);
-      console.log(
-        "[syncCmd] listRemoteFilesMap(manifestRef) succeeded, remoteMap keys:",
-        Object.keys(remoteMap)
-      );
-    } catch (err) {
-      console.log(
-        "⚠️  [syncCmd] listRemoteFilesMap(manifestRef) threw:",
-        (err as Error).message
-      );
-      // recovery if localFiles match prevFiles
-      const sameSet =
-        prevFiles.length === localFiles.length &&
-        prevFiles.every((f) => localFiles.includes(f));
-
-      if (sameSet && prevFiles.length > 0) {
-        console.log("[syncCmd] prevFiles === localFiles → recovering remoteMap");
-        for (const f of prevFiles) {
-          remoteMap[f] = manifestRef!;
-        }
-      } else {
-        console.log("[syncCmd] Unable to recover remoteMap → treating as empty");
-        remoteMap = {};
-        manifestRef = undefined;
+  let oldManifest: string | undefined
+  if (lastIndex >= 0n) {
+    // load whatever is at slot = lastIndex
+    const reader = bee.makeFeedReader(DRIVE_FEED_TOPIC.toUint8Array(), ownerAddress);
+    const msg    = await reader.download({ index: FeedIndex.fromBigInt(lastIndex) });
+    const raw    = msg.payload.toUint8Array();
+    if (raw.length === 32) {
+      const ref = new BeeReference(raw);
+      if (!ref.equals(SWARM_ZERO_ADDRESS)) {
+        oldManifest = ref.toString();
       }
     }
+    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifest ?? "(empty)");
   } else {
-    console.log("[syncCmd] No manifestRef → remoteMap = {}");
+    console.log("[syncCmd] feed is empty; starting at slot 0");
   }
 
-  const remoteFiles = Object.keys(remoteMap);
-  console.log("[syncCmd] remoteFiles:", remoteFiles);
+  // 4️⃣  Scan local directory
+  const localFiles = await fg("**/*", { cwd: cfg.localDir, onlyFiles: true })
+  console.log("[syncCmd] prevFiles:", prevFiles)
+  console.log("[syncCmd] localFiles:", localFiles)
 
-  // Determine differences
-  const toPull = remoteFiles.filter(
-    (f) => !localFiles.includes(f) && !prevFiles.includes(f)
-  );
-  const toDeleteRemote = remoteFiles.filter(
-    (f) => prevFiles.includes(f) && !localFiles.includes(f)
-  );
-  const toAdd = localFiles.filter((f) => !remoteFiles.includes(f));
+  // 5️⃣  Build the remote-map from the old manifest
+  let remoteMap: Record<string,string> = {}
+  if (oldManifest) {
+    try {
+      remoteMap = await listRemoteFilesMap(bee, oldManifest)
+    } catch {
+      console.warn("[syncCmd] failed to load old manifest, assuming empty")
+    }
+  }
+  const remoteFiles = Object.keys(remoteMap)
 
-  const toModify: string[] = [];
-  // Only attempt to compare contents if downloadRemoteFile returns a Buffer
-  for (const f of localFiles.filter((f) => remoteMap[f])) {
-    const abs = path.join(cfg.localDir, f);
+  // 6️⃣  Compute diff sets
+  const toPull         = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f))
+  const toDeleteRemote = remoteFiles.filter(f => prevFiles.includes(f)    && !localFiles.includes(f))
+  const toAdd          = localFiles.filter(  f => !remoteFiles.includes(f))
+
+  const toModify: string[] = []
+  for (const f of localFiles.filter(f => remoteMap[f])) {
+    const abs = path.join(cfg.localDir, f)
     const [lb, rb] = await Promise.all([
       fs.readFile(abs),
-      downloadRemoteFile(bee, manifestRef!, f),
-    ]);
-    if (rb instanceof Buffer && !Buffer.from(lb).equals(rb)) {
-      toModify.push(f);
+      downloadRemoteFile(bee, oldManifest!, f),
+    ])
+    if (!Buffer.from(lb).equals(Buffer.from(rb))) {
+      toModify.push(f)
     }
   }
 
-  console.log("[syncCmd] toPull:", toPull);
-  console.log("[syncCmd] toDeleteRemote:", toDeleteRemote);
-  console.log("[syncCmd] toAdd:", toAdd);
-  console.log("[syncCmd] toModify:", toModify);
+  console.log("[syncCmd] toPull:", toPull)
+  console.log("[syncCmd] toDeleteRemote:", toDeleteRemote)
+  console.log("[syncCmd] toAdd:", toAdd)
+  console.log("[syncCmd] toModify:", toModify)
 
-  // Nothing to do?
   if (
     toPull.length === 0 &&
     toDeleteRemote.length === 0 &&
     toAdd.length === 0 &&
     toModify.length === 0
   ) {
-    console.log("✅ [syncCmd] Nothing to sync.");
-    return;
+    console.log("✅ [syncCmd] Nothing to sync.")
+    return
   }
 
-  // Pull remote‐only files
+  // 7️⃣  Apply changes locally & build up a new manifest
+  let newManifest = oldManifest
+
+  // pull down any purely-remote files
   for (const f of toPull) {
-    console.log("⤵️  [syncCmd] PULL NEW REMOTE ⟶ LOCAL:", f);
-    const bytes = await downloadRemoteFile(bee, manifestRef!, f);
-    const dst = path.join(cfg.localDir, f);
-    await fs.mkdir(path.dirname(dst), { recursive: true });
-    await fs.writeFile(dst, bytes);
-    localFiles.push(f);
+    console.log("⤵️  Pull new remote →", f)
+    const data = await downloadRemoteFile(bee, oldManifest!, f)
+    const dst  = path.join(cfg.localDir, f)
+    await fs.mkdir(path.dirname(dst), { recursive: true })
+    await fs.writeFile(dst, data)
+    localFiles.push(f)
   }
 
-  // Upload new local files
+  // upload new local files
   for (const f of toAdd) {
-    console.log("➕ [syncCmd] UPLOAD LOCAL ⟶ REMOTE:", f);
-    const abs = path.join(cfg.localDir, f);
-    manifestRef = await updateManifest(bee, batchID, manifestRef, abs, f, false);
-    console.log("[syncCmd] After add, manifestRef =", manifestRef);
+    console.log("➕ Add local →", f)
+    newManifest = await updateManifest(
+      bee, batchID, newManifest, path.join(cfg.localDir, f), f, false
+    )
   }
 
-  // Update modified files
+  // replace modified files
   for (const f of toModify) {
-    console.log("🔄 [syncCmd] REPLACE REMOTE CONTENT:", f);
-    manifestRef = await updateManifest(
-      bee,
-      batchID,
-      manifestRef,
-      path.join(cfg.localDir, f),
-      f,
-      true
-    );
-    console.log("[syncCmd] After remove fork, manifestRef =", manifestRef);
-
-    const abs = path.join(cfg.localDir, f);
-    manifestRef = await updateManifest(bee, batchID, manifestRef, abs, f, false);
-    console.log("[syncCmd] After re-add, manifestRef =", manifestRef);
+    console.log("🔄 Replace →", f)
+    newManifest = await updateManifest(
+      bee, batchID, newManifest, "", f, true   // remove old
+    )
+    newManifest = await updateManifest(
+      bee, batchID, newManifest, path.join(cfg.localDir, f), f, false
+    )
   }
 
-  // Delete remote files that no longer exist locally
+  // delete files no longer locally present
   for (const f of toDeleteRemote) {
-    console.log("🗑️  [syncCmd] DELETE REMOTE FORMERLY–LOCAL:", f);
-    manifestRef = await updateManifest(
-      bee,
-      batchID,
-      manifestRef,
-      path.join(cfg.localDir, f),
-      f,
-      true
-    );
-    console.log("[syncCmd] After delete, manifestRef =", manifestRef);
+    console.log("🗑️  Delete remote →", f)
+    newManifest = await updateManifest(
+      bee, batchID, newManifest, "", f, true
+    )
   }
 
-  // Wait until the new manifest is loadable
-  if (manifestRef) {
-    console.log(`[syncCmd] Waiting for manifest ${manifestRef} to be loadable…`);
-    const startWait = Date.now();
-    while (true) {
-      try {
-        await listRemoteFilesMap(bee, manifestRef);
-        const elapsed = Date.now() - startWait;
-        console.log(`   • Manifest is loadable after ${elapsed} ms`);
-        break;
-      } catch (err: any) {
-        const msg = typeof err.message === "string" ? err.message : "";
-        if (err.status === 404 || msg.includes("invalid version hash")) {
-          continue;
-        }
-        throw err;
-      }
-    }
-  }
+  // 8️⃣  Pin the new manifest in Bee (pin under your postage batch)
+  console.log("[syncCmd] Pinning new manifest →", newManifest)
+  // (we rely on updateManifest having pinned each leaf and the root)
 
-  console.log(
-    `[syncCmd] About to writeDriveFeed(feedIndex=${lastFeedIndex}, manifestRef=${manifestRef})…`
-  );
-  await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, manifestRef!, lastFeedIndex);
-  console.log(`[syncCmd] Updated drive feed@${lastFeedIndex} → ${manifestRef}`);
+  // 9️⃣  **Append** to the feed at ++index
+  const nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n
+  console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifest)
+  await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, newManifest!, nextIndex)
 
-  // Pause briefly before saving state
-  await new Promise((r) => setTimeout(r, 500));
-
-  const nextFeedIndex = lastFeedIndex + 1n;
+  // 🔟  Save only your local snapshot (no manifest or feedIndex in state)
   await saveState({
     lastFiles: localFiles,
-    lastManifest: manifestRef!,
-    lastFeedIndex: nextFeedIndex.toString(),
-    lastSync: new Date().toISOString(),
-  });
-  console.log("[syncCmd] Saved state with lastManifest =", manifestRef);
+    lastSync:  new Date().toISOString(),
+  })
 
-  console.log(
-    `✅ [syncCmd] Synced:\n` +
-      `   + pulled:   ${toPull.join(", ") || "(none)"}\n` +
-      `   + uploaded: ${toAdd.join(", ") || "(none)"}\n` +
-      `   ~ replaced: ${toModify.join(", ") || "(none)"}\n` +
-      `   - deleted:  ${toDeleteRemote.join(", ") || "(none)"}\n` +
-      `→ Final manifest: ${manifestRef}`
-  );
+  console.log(`✅ [syncCmd] Done → feed@${nextIndex}`)
 }
