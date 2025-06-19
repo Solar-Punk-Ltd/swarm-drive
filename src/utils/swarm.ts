@@ -15,16 +15,18 @@ import { SWARM_ZERO_ADDRESS } from "./constants";
 const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
 
 export function makeBareBeeClient(): Bee {
-  const signerKey = process.env.BEE_SIGNER_KEY!;
+  const signerKey = process.env.BEE_SIGNER_KEY;
+  if (!signerKey) {
+    throw new Error("🚨 BEE_SIGNER_KEY must be set in your environment");
+  }
   if (!signerKey.startsWith("0x")) {
-    throw new Error(
-      "🚨 BEE_SIGNER_KEY must be set in your environment and start with 0x"
-    );
+    throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment");
   }
   return new Bee("http://localhost:1633", {
     signer: new PrivateKey(signerKey),
   });
 }
+
 
 export async function createBeeClient(
   apiUrl: string,

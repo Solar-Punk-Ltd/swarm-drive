@@ -37,7 +37,6 @@ jest.mock("@ethersphere/bee-js", () => {
 import { feedGet, feedLs, manifestLs, listStamps } from "../../src/commands/helpers";
 import * as swarmUtils from "../../src/utils/swarm";
 import { Bee } from "@ethersphere/bee-js";
-
 jest.mock("../../src/utils/swarm");
 
 describe("helpers.ts", () => {
@@ -62,7 +61,7 @@ describe("helpers.ts", () => {
     jest.restoreAllMocks();
   });
 
-  describe("makeBeeWithoutStamp (indirectly via feedGet)", () => {
+  describe("makeBareBeeClient (indirectly via feedGet)", () => {
     it("throws if BEE_SIGNER_KEY is missing", async () => {
       delete process.env.BEE_SIGNER_KEY;
       await expect(feedGet()).rejects.toThrow(/must be set/);
@@ -77,10 +76,12 @@ describe("helpers.ts", () => {
   describe("feedGet(indexArg)", () => {
     const dummySignerKey = "0x" + "1".repeat(64);
 
-    beforeEach(() => {
-      process.env.BEE_SIGNER_KEY = dummySignerKey;
-      jest.resetAllMocks();
-    });
+  beforeEach(() => {
+    process.env.BEE_SIGNER_KEY = dummySignerKey;
+    (swarmUtils.readDriveFeed as jest.Mock).mockReset();
+    (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
+    (swarmUtils.makeBareBeeClient as jest.Mock).mockReset();
+  });
 
     it("prints hex when payload is exactly 32 bytes (non-zero)", async () => {
       const fakePayload = Buffer.from("a".repeat(64), "hex");
@@ -215,13 +216,14 @@ describe("helpers.ts", () => {
 
   describe("feedLs()", () => {
     it("just calls feedGet()", async () => {
+      // we spy on feedGet, since feedLs should delegate to it
       const helper = require("../../src/commands/helpers");
       const spy = jest.spyOn(helper, "feedGet").mockResolvedValue(undefined);
-      await feedLs();
+      // call via the module so our spy is applied
+      await helper.feedLs();
       expect(spy).toHaveBeenCalledWith(undefined);
     });
   });
-
   describe("manifestLs()", () => {
     beforeEach(() => {
       process.env.BEE_SIGNER_KEY = "0x" + "2".repeat(64);
@@ -230,7 +232,7 @@ describe("helpers.ts", () => {
 
     it("prints empty when remote manifest has no files", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockResolvedValue(fakeBee);
+      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({});
 
       await expect(manifestLs("someRef")).resolves.toBeUndefined();
@@ -239,7 +241,7 @@ describe("helpers.ts", () => {
 
     it("prints list of files when remote manifest has entries", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockResolvedValue(fakeBee);
+      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({
         "a.txt": "refA",
         "b.txt": "refB",
@@ -253,7 +255,7 @@ describe("helpers.ts", () => {
 
     it("exits on listRemoteFilesMap error", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockResolvedValue(fakeBee);
+      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(
         new Error("fail")
       );

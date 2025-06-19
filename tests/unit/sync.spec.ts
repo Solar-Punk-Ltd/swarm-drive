@@ -1,3 +1,4 @@
+// tests/unit/sync.spec.ts
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
@@ -8,21 +9,45 @@ import { loadState, saveState } from "../../src/utils/state";
 
 jest.mock("../../src/utils/swarm");
 
-describe("sync command - additional cases", () => {
-  const tmp = path.join(os.tmpdir(), `swarm-drive-test-sync2-${Date.now()}`);
+describe("sync command – latest remote-only implementation", () => {
+  const tmp = path.join(os.tmpdir(), `swarm-drive-test-sync-${Date.now()}`);
   const cwdBefore = process.cwd();
   const DUMMY_REF = "a".repeat(64);
   const dummyBee = {
-    signer: { publicKey: () => ({ address: () => ({ toString: () => "ownerAddress" }) }) },
+    signer: {
+      publicKey: () => ({
+        address: () => ({ toString: () => "ownerAddress" }),
+      }),
+    },
+    // we’ll stub this below:
+    makeFeedReader: jest.fn(),
   };
 
   beforeEach(async () => {
     await fs.ensureDir(tmp);
     process.chdir(tmp);
+
+    // point the CLI at our temp dir
     await saveConfig({ localDir: tmp });
-    await saveState({ lastSync: "", lastManifest: undefined, lastFiles: [] });
-    (swarm.createBeeClient as jest.Mock).mockResolvedValue({ bee: dummyBee, swarmDriveBatch: { batchID: "batch1" } });
+    // fresh state: no files, no manifest
+    await saveState({ lastSync: "", lastFiles: [] });
+
+    // stub out Bee client & feed writer
+    (swarm.createBeeClient as jest.Mock).mockResolvedValue({
+      bee: dummyBee,
+      swarmDriveBatch: { batchID: "batch1" },
+    });
     (swarm.writeDriveFeed as jest.Mock).mockResolvedValue(undefined);
+
+    // default: no entries in the feed (slot 0 missing)
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValue(-1n);
+
+    // whenever we do makeFeedReader().download(), return our dummy ref
+    dummyBee.makeFeedReader = jest.fn().mockReturnValue({
+      download: jest.fn().mockResolvedValue({
+        payload: { toUint8Array: () => Buffer.from(DUMMY_REF, "hex") },
+      }),
+    });
   });
 
   afterEach(async () => {
@@ -32,89 +57,100 @@ describe("sync command - additional cases", () => {
   });
 
   it("no-ops when nothing changed", async () => {
-    // Set up initial state: first run uploads "a.txt"
+    // ─── First run: add a.txt ───────────────────────────────────────
     await fs.writeFile(path.join(tmp, "a.txt"), "foo");
-    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(undefined);
+    // feed empty
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
+    // updateManifest returns our dummy manifest
     (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
-    await syncCmd();
-    let st = await loadState();
-    expect(st.lastFiles).toEqual(["a.txt"]);
-    expect(st.lastManifest).toBe(DUMMY_REF);
 
-    // Second run: same files on remote
-    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
+    await syncCmd();
+
+    // ─── Second run: remote has exactly the same a.txt ─────────────
+    // now stub readFeedIndex→0 so we pick up slot 0
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    // listRemoteFilesMap returns exactly that file
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "a.txt": "refA" });
-    // stub downloadRemoteFile to match local
+    // downloadRemoteFile returns identical contents
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("foo"));
 
-    // Capture console output
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     await syncCmd();
-    expect(logSpy).toHaveBeenCalledWith("✅ [syncCmd] Nothing to sync.");
+    // check the spy
+    expect(logSpy).toHaveBeenLastCalledWith("✅ [syncCmd] Nothing to sync.");
     logSpy.mockRestore();
+
+    // we only ever wrote once (the first run)
+    expect((swarm.writeDriveFeed as jest.Mock).mock.calls.length).toBe(1);
+
+    const st = await loadState();
+    expect(st.lastFiles).toEqual(["a.txt"]);
   });
 
-  it("pulls a remote-only file when local has none", async () => {
-    // Local has no files
-    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
+  it("pulls a remote-only file when none locally", async () => {
+    // remote manifest exists at slot 0
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    // remote contains c.txt
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "c.txt": "refC" });
+    // downloadRemoteFile returns its data
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("dataC"));
-
-    // Stub updateManifest so that it does not change manifest
-    // but in this pull‐only scenario, there is no add/modify/delete,
-    // only pull. So manifestRef remains DUMMY_REF.
-    await saveState({ lastSync: "", lastManifest: DUMMY_REF, lastFiles: [] });
 
     await syncCmd();
 
-    // Verify c.txt was written
-    const exists = await fs.pathExists(path.join(tmp, "c.txt"));
-    expect(exists).toBe(true);
-    expect((await fs.readFile(path.join(tmp, "c.txt"))).toString()).toBe("dataC");
+    // c.txt must have been created
+    const content = await fs.readFile(path.join(tmp, "c.txt"), "utf8");
+    expect(content).toBe("dataC");
+
+    // and we must have appended the feed once
+    expect(swarm.writeDriveFeed).toHaveBeenCalledWith(
+      dummyBee,
+      expect.anything(),        // DRIVE_FEED_TOPIC (a Uint8Array)
+      "batch1",                 // postage batch id
+      DUMMY_REF,                // the unchanged manifestRef
+      expect.any(BigInt)        // feed index 0n
+    );
 
     const st = await loadState();
     expect(st.lastFiles).toEqual(["c.txt"]);
-    expect(st.lastManifest).toBe(DUMMY_REF);
   });
 
-  it("recovers remoteMap when manifestRef fails but prevFiles === localFiles", async () => {
-    // Create a.txt locally
-    await fs.writeFile(path.join(tmp, "x.txt"), "abc");
-
-    // Fake state: lastManifest = "bad", lastFiles = ["x.txt"]
-    await saveState({ lastSync: "", lastManifest: "bad", lastFiles: ["x.txt"] });
-
-    // readDriveFeed → returns "bad"
-    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce("bad");
-
-    // listRemoteFilesMap("bad") throws → triggers recover logic
-    (swarm.listRemoteFilesMap as jest.Mock).mockRejectedValueOnce(new Error("invalid version hash"));
-
-    // Since prevFiles === localFiles, it should recover remoteMap = { x.txt: "bad" }
-    // Therefore no toAdd, no toPul, no toDelete. So final is no‐op:
-    (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({}); // for wait-loop, but manifestRef = "bad"
-
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+  it("uploads a modified local file", async () => {
+    // ─── First run: upload b.txt ───────────────────────────────────
+    await fs.writeFile(path.join(tmp, "b.txt"), "old");
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
+    (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
     await syncCmd();
-    expect(logSpy).toHaveBeenCalledWith("✅ [syncCmd] Nothing to sync.");
-    logSpy.mockRestore();
-  });
 
-  it("loops waiting for manifest to become loadable", async () => {
-    // Scenario: we add a.txt to remote, updateManifest returns a NEW manifest
-    await fs.writeFile(path.join(tmp, "a.txt"), "foo");
-    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(undefined);
-    (swarm.updateManifest as jest.Mock).mockResolvedValueOnce("newHash");
+    // ─── Second run: b.txt changed locally ────────────────────────
+    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "b.txt": "refB" });
+    (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("old"));
 
-    // listRemoteFilesMap throws 404 twice, then succeeds
-    (swarm.listRemoteFilesMap as jest.Mock)
-      .mockRejectedValueOnce(Object.assign(new Error("invalid version hash"), { status: 404 }))
-      .mockRejectedValueOnce(Object.assign(new Error("invalid version hash"), { status: 404 }))
-      .mockResolvedValueOnce({ "a.txt": "someRef" });
+    // next two calls to updateManifest are: remove then add
+    const REMOVED_REF = "c".repeat(64);
+    const NEW_REF     = "d".repeat(64);
+    // first two calls (initial run) consumed DUMMY_REF; next two are remove/add
+    (swarm.updateManifest as jest.Mock)
+      .mockResolvedValueOnce(REMOVED_REF)
+      .mockResolvedValueOnce(NEW_REF);
 
+    // actually change the file
+    await fs.writeFile(path.join(tmp, "b.txt"), "new");
     await syncCmd();
-    // If no errors thrown, it means loop eventually passed
+
+    // updateManifest must have been called (remove + add)
+    expect((swarm.updateManifest as jest.Mock).mock.calls.length).toBe(3);
+
+    // and the **last** feed write must use NEW_REF
+    expect(swarm.writeDriveFeed).toHaveBeenLastCalledWith(
+      dummyBee,
+      expect.anything(),
+      "batch1",
+      NEW_REF,
+      expect.any(BigInt)
+    );
+
     const st = await loadState();
-    expect(st.lastManifest).toBe("newHash");
+    expect(st.lastFiles).toEqual(["b.txt"]);
   });
 });
