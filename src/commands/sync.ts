@@ -3,7 +3,6 @@ import fs from "fs/promises"
 import fg from "fast-glob"
 
 import {
-  Bee,
   FeedIndex,
   Reference as BeeReference,
 } from "@ethersphere/bee-js"

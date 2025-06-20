@@ -1,3 +1,4 @@
+// tests/integration/helpers.integration.spec.ts
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -21,19 +22,16 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
   let signerKey: string;
 
   beforeAll(async () => {
-    const FALLBACK_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    signerKey = (process.env.BEE_SIGNER_KEY?.startsWith("0x")
+    const FALLBACK_KEY =
+      "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    signerKey = process.env.BEE_SIGNER_KEY?.startsWith("0x")
       ? process.env.BEE_SIGNER_KEY!
-      : FALLBACK_KEY
-    );
-    // 1) Create a Bee client with the real, funded BEE_SIGNER_KEY
-    bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
+      : FALLBACK_KEY;
 
-    // 2) Ensure that a postage batch labeled "swarm-drive-stamp" already exists (or else buy one)
+    bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
     const allBatches = await bee.getAllPostageBatch();
     const existing = allBatches.find((b) => b.label === POSTAGE_LABEL);
     if (!existing) {
-      // This account must already be funded on your local Bee node
       await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);
     }
   });
@@ -49,10 +47,6 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
     await fs.remove(tmpDir);
   });
 
-  /**
-   * Run `swarm-cli <...args>` synchronously; throw on non-zero exit.
-   * Always inject BEE_SIGNER_KEY into the child-process env so the CLI sees it.
-   */
   function runCli(args: string[]): string {
     const result = spawnSync(
       process.execPath,
@@ -71,64 +65,49 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
   }
 
   it("`feed-get 0` and `feed-ls` both return the same manifest reference", async () => {
-    // 1) Create “docs/” and run `swarm-cli init docs`
     const dataDir = "docs";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
 
-    // 2) Write x.md inside docs/, then run `swarm-cli sync`
-    const docsFolder = path.join(tmpDir, dataDir);
-    await fs.writeFile(path.join(docsFolder, "x.md"), "X", "utf-8");
+    await fs.writeFile(path.join(tmpDir, dataDir, "x.md"), "X", "utf-8");
     runCli(["sync"]);
 
-    // ── Give Bee 1 second to propagate the feed entry ──
     await new Promise((r) => setTimeout(r, 1000));
 
-    // 3) Poll until `swarm-cli feed-get 0` returns a 64-hex manifest
     let ref0 = "";
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    for (let i = 0; i < 5; i++) {
       const out = runCli(["feed-get", "0"]);
       const parts = out.split(/\s+/);
-      if (parts.length >= 3) {
-        const maybe = parts[2].trim();
-        if (/^[0-9a-fA-F]{64}$/.test(maybe)) {
-          ref0 = maybe;
-          break;
-        }
+      if (parts.length >= 3 && /^[0-9a-fA-F]{64}$/.test(parts[2])) {
+        ref0 = parts[2];
+        break;
       }
       await new Promise((r) => setTimeout(r, 500));
     }
     expect(ref0).toMatch(/^[0-9a-fA-F]{64}$/);
 
-    // 4) Now run `swarm-cli feed-ls` (alias for “feed-get latest”) — it must show the same hex
-    const feedLsOut = runCli(["feed-ls"]);
-    const partsLs = feedLsOut.split(/\s+/);
-    expect(partsLs.length).toBeGreaterThanOrEqual(3);
-    const latestRef = partsLs[2].trim();
-    expect(latestRef).toBe(ref0);
+    const ls = runCli(["feed-ls"]).split(/\s+/);
+    expect(ls[2]).toBe(ref0);
   });
 
-  it("`manifest-ls <ref>` lists the correct files", async () => {
-    // 1) Create “data/”, run `swarm-cli init data`, then sync a file named foo.txt
+  it("`manifest-ls <ref>` lists the correct files (slot 1)", async () => {
     const dataDir = "data";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
 
-    const localFolder = path.join(tmpDir, dataDir);
-    await fs.writeFile(path.join(localFolder, "foo.txt"), "foo", "utf-8");
+    await fs.writeFile(path.join(tmpDir, dataDir, "foo.txt"), "foo", "utf-8");
     runCli(["sync"]);
 
-    // ── The CLI writes .swarm-sync-state.json almost immediately ■ no need to poll “feed-get” again
-    // Wait just 200ms to let the CLI finish saving its state
-    await new Promise((r) => setTimeout(r, 200));
+    // give a moment for the feed to be published
+    await new Promise((r) => setTimeout(r, 2500));
 
-    // 2) Read `.swarm-sync-state.json` directly to grab the lastManifest
-    const stateFile = path.join(tmpDir, ".swarm-sync-state.json");
-    const stateObj = fs.readJsonSync(stateFile) as { lastManifest: string };
-    const manifestRef = stateObj.lastManifest;
+    // explicitly pull slot 1 (where foo.txt was pushed)
+    const out1 = runCli(["feed-get", "1"]);
+    const parts1 = out1.split(/\s+/);
+    expect(parts1.length).toBeGreaterThanOrEqual(3);
+    const manifestRef = parts1[2].trim();
     expect(manifestRef).toMatch(/^[0-9a-fA-F]{64}$/);
 
-    // 3) Finally, do `swarm-cli manifest-ls <manifestRef>` and check it contains “foo.txt”
     const finalLs = runCli(["manifest-ls", manifestRef]);
     expect(finalLs).toMatch(/foo\.txt/);
   });

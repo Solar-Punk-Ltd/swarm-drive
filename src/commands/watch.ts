@@ -12,6 +12,11 @@ export async function watchCmd(debounceMs: number) {
     depth: Infinity,
   });
 
+  // log when the watcher is ready, but don't await it—so tests don't hang:
+  watcher.once("ready", () => {
+    console.log("Watcher ready — now watching for file events…");
+  });
+
   const debouncedSync = debounce(async () => {
     console.log("Change detected, running sync…");
     await syncCmd();

@@ -110,7 +110,7 @@ describe("Swarm-CLI Integration Test: watch", () => {
     );
 
     // 3) Wait a moment, then create “data/hello.txt”
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 2500));
     const localFolder = path.join(tmpDir, dataDir);
     await fs.writeFile(path.join(localFolder, "hello.txt"), "Hello!", "utf-8");
 
@@ -142,7 +142,7 @@ describe("Swarm-CLI Integration Test: watch", () => {
         }
       }
       // If not found yet, wait 1 second and retry
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 2500));
     }
 
     expect(foundManifest).toMatch(/^[0-9a-fA-F]{64}$/);
