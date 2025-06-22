@@ -30,16 +30,16 @@ npm test
 
 All unit tests live in `tests/unit/` and cover:
 
-- **helpers** (`helpers.spec.ts`)  
-  - `feedGet`, `feedLs`, `manifestLs`, `listStamps` behaviors
-- **schedule** (`schedule.spec.ts`)  
-  - `scheduleCmd` invocation & timer behavior
-- **watch** (`watch.spec.ts`)  
-  - `watchCmd` file–event debounce & error handling
 - **init** (`init.spec.ts`)  
   - `initCmd` config/state file creation and error cases
 - **sync** (`sync.spec.ts`)  
   - `syncCmd` end-to-end “remote-only” synchronization flows
+- **helpers** (`helpers.spec.ts`)  
+  - `feedGet`, `feedLs`, `manifestLs`, `listStamps` behaviors
+- **watch** (`watch.spec.ts`)  
+  - `watchCmd` file–event debounce & error handling
+- **schedule** (`schedule.spec.ts`)  
+  - `scheduleCmd` invocation & timer behavior
 
 ### Run just unit tests
 
@@ -51,16 +51,26 @@ npx jest tests/unit
 
 ## Integration Tests
 
-> **TODO:** Add end-to-end or service-level tests here once the Bee node is available  
-> (e.g. spinning up a local Swarm node, running `init → sync → watch` in a real directory, etc.)
+Detailed end‑to‑end or service‑level tests live in `tests/integration/`, validating real interactions with a Bee dev node:
 
-To run integration tests:
+- **init** (`init.integration.spec.ts`)  
+  Tests that `init` writes a valid config and empty state file.  
+- **sync** (`sync.integration.spec.ts`)  
+  Tests end‑to‑end synchronization: initial upload, manifest listing, file modifications, and deletions.  
+- **helpers** (`helpers.integration.spec.ts`)  
+  Tests helper commands: `feed-get`, `feed-ls`, and `manifest-ls` against a live node.  
+- **watch** (`watch.integration.spec.ts`)  
+  Tests `watch` command detects file changes and publishes updates to the feed manifest.  
+- **schedule** (`schedule.integration.spec.ts`)  
+  Tests `schedule` command performs an initial sync and repeats at the configured interval.  
+
+### Run just integration tests
+
+Integration tests require a running Bee dev node on port 1633. Our script launches and kills a bee-node to enable the bee-api endpoints:
 
 ```bash
 npx jest tests/integration
 ```
-
----
 
 ## Coverage
 
