@@ -18,31 +18,29 @@ import { loadConfig } from "../utils/config"
 import { loadState, saveState } from "../utils/state"
 import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants"
 
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+
 export async function syncCmd() {
   console.log("[syncCmd] Starting sync…")
 
-  // 1️⃣  Load config + previous snapshot
-  const cfg     = await loadConfig()
-  const state   = await loadState()
+  const cfg = await loadConfig()
+  const state = await loadState()
   const prevFiles = state.lastFiles || []
   console.log("[syncCmd] Loaded state:", state)
 
-  // 2️⃣  Connect to Bee
   const { bee, swarmDriveBatch } = await createBeeClient(
-    "http://localhost:1633",
+    BEE_API,
     process.env.BEE_SIGNER_KEY!
   )
   const batchID      = swarmDriveBatch.batchID
   const ownerAddress = bee.signer!.publicKey().address().toString()
   console.log("[syncCmd] Bee ready → owner:", ownerAddress)
 
-  // 3️⃣  Figure out the last feed index & fetch that manifest
   const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, ownerAddress)
   console.log("[syncCmd] feed@latest index →", lastIndex)
 
   let oldManifest: string | undefined
   if (lastIndex >= 0n) {
-    // load whatever is at slot = lastIndex
     const reader = bee.makeFeedReader(DRIVE_FEED_TOPIC.toUint8Array(), ownerAddress);
     const msg    = await reader.download({ index: FeedIndex.fromBigInt(lastIndex) });
     const raw    = msg.payload.toUint8Array();
@@ -57,12 +55,10 @@ export async function syncCmd() {
     console.log("[syncCmd] feed is empty; starting at slot 0");
   }
 
-  // 4️⃣  Scan local directory
   const localFiles = await fg("**/*", { cwd: cfg.localDir, onlyFiles: true })
   console.log("[syncCmd] prevFiles:", prevFiles)
   console.log("[syncCmd] localFiles:", localFiles)
 
-  // 5️⃣  Build the remote-map from the old manifest
   let remoteMap: Record<string,string> = {}
   if (oldManifest) {
     try {
@@ -73,7 +69,6 @@ export async function syncCmd() {
   }
   const remoteFiles = Object.keys(remoteMap)
 
-  // 6️⃣  Compute diff sets
   const toPull         = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f))
   const toDeleteRemote = remoteFiles.filter(f => prevFiles.includes(f)    && !localFiles.includes(f))
   const toAdd          = localFiles.filter(  f => !remoteFiles.includes(f))
@@ -105,10 +100,8 @@ export async function syncCmd() {
     return
   }
 
-  // 7️⃣  Apply changes locally & build up a new manifest
   let newManifest = oldManifest
 
-  // pull down any purely-remote files
   for (const f of toPull) {
     console.log("⤵️  Pull new remote →", f)
     const data = await downloadRemoteFile(bee, oldManifest!, f)
@@ -118,7 +111,6 @@ export async function syncCmd() {
     localFiles.push(f)
   }
 
-  // upload new local files
   for (const f of toAdd) {
     console.log("➕ Add local →", f)
     newManifest = await updateManifest(
@@ -126,18 +118,16 @@ export async function syncCmd() {
     )
   }
 
-  // replace modified files
   for (const f of toModify) {
     console.log("🔄 Replace →", f)
     newManifest = await updateManifest(
-      bee, batchID, newManifest, "", f, true   // remove old
+      bee, batchID, newManifest, "", f, true
     )
     newManifest = await updateManifest(
       bee, batchID, newManifest, path.join(cfg.localDir, f), f, false
     )
   }
 
-  // delete files no longer locally present
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete remote →", f)
     newManifest = await updateManifest(
@@ -145,16 +135,12 @@ export async function syncCmd() {
     )
   }
 
-  // 8️⃣  Pin the new manifest in Bee (pin under your postage batch)
   console.log("[syncCmd] Pinning new manifest →", newManifest)
-  // (we rely on updateManifest having pinned each leaf and the root)
 
-  // 9️⃣  **Append** to the feed at ++index
   const nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n
   console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifest)
   await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, newManifest!, nextIndex)
 
-  // 🔟  Save only your local snapshot (no manifest or feedIndex in state)
   await saveState({
     lastFiles: localFiles,
     lastSync:  new Date().toISOString(),

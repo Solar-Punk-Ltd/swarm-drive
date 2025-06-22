@@ -16,7 +16,7 @@ import { DRIVE_FEED_TOPIC } from "../../src/utils/constants";
 jest.setTimeout(45_000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = "http://localhost:1633";
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Test: schedule", () => {

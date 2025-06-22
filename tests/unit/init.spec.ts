@@ -8,6 +8,8 @@ import { createBeeClient } from "../../src/utils/swarm";
 
 jest.mock("../../src/utils/swarm");
 
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+
 describe("init command", () => {
   const tmp = path.join(os.tmpdir(), `swarm-drive-test-${Date.now()}`);
   const cwdBefore = process.cwd();
@@ -65,7 +67,7 @@ describe("init command", () => {
 
     // 3) stamp initialization calls
     expect(createBeeClient).toHaveBeenCalledWith(
-      "http://localhost:1633",
+      BEE_API,
       process.env.BEE_SIGNER_KEY
     );
 

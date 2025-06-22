@@ -4,8 +4,9 @@ import { Config } from "../types"
 import { saveConfig } from "../utils/config"
 import { createBeeClient } from "../utils/swarm"
 
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+
 export async function initCmd(localDir: string) {
-  // 1) Validate the local directory
   try {
     const stat = await fs.stat(localDir)
     if (!stat.isDirectory()) throw new Error("Not a directory")
@@ -14,11 +15,9 @@ export async function initCmd(localDir: string) {
     process.exit(1)
   }
 
-  // 2) Save the CLI config
   const cfg: Config = { localDir }
   await saveConfig(cfg)
 
-  // 3) Clear any previous state
   await fs.writeFile(
     path.resolve(".swarm-sync-state.json"),
     JSON.stringify({}, null, 2),
@@ -30,7 +29,7 @@ export async function initCmd(localDir: string) {
     console.log("Initializing Bee client and ensuring postage stamp exists…")
     try {
       const { swarmDriveBatch } = await createBeeClient(
-        "http://localhost:1633",
+        BEE_API,
         process.env.BEE_SIGNER_KEY,
       )
       console.log(
@@ -41,7 +40,6 @@ export async function initCmd(localDir: string) {
         "Warning: could not initialize Bee client or create stamp:",
         err.message || err,
       )
-      // we do NOT process.exit here — init still succeeds
     }
   } else if (!process.env.BEE_SIGNER_KEY) {
     console.log("BEE_SIGNER_KEY not set; skipping Bee client initialization")

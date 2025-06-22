@@ -1,9 +1,9 @@
-// src/commands/helpers.ts
 import { Bee, PrivateKey, FeedIndex } from "@ethersphere/bee-js"
 import * as swarmUtils from "../utils/swarm"
 import { DRIVE_FEED_TOPIC } from "../utils/constants"
 
-//–– used only by feedGet, so that its tests drive the real env-checks
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+
 async function makeBeeWithoutStamp(): Promise<Bee> {
   const signerKey = process.env.BEE_SIGNER_KEY
   if (!signerKey) {
@@ -12,17 +12,15 @@ async function makeBeeWithoutStamp(): Promise<Bee> {
   if (!signerKey.startsWith("0x")) {
     throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment")
   }
-  return new Bee("http://localhost:1633", {
+  return new Bee(BEE_API, {
     signer: new PrivateKey(signerKey),
   })
 }
 
 export async function feedGet(indexArg?: number): Promise<void> {
-  // 1) Instantiate Bee with proper signer checks
   const bee = await makeBeeWithoutStamp()
   const owner = bee.signer!.publicKey().address().toString()
 
-  // 2) No indexArg → highest slot via readDriveFeed
   if (typeof indexArg !== "number") {
     try {
       const ref = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC, owner)
@@ -40,7 +38,6 @@ export async function feedGet(indexArg?: number): Promise<void> {
     return
   }
 
-  // 3) Explicit slot
   const slot = BigInt(indexArg)
   const reader = bee.makeFeedReader(
     DRIVE_FEED_TOPIC.toUint8Array(),
@@ -70,7 +67,6 @@ export async function feedGet(indexArg?: number): Promise<void> {
 }
 
 export async function feedLs(indexArg?: number): Promise<void> {
-  // delegate to the exported feedGet so that jest.spyOn(exports, 'feedGet') works
   const { feedGet } = await import("./helpers")
   return feedGet(indexArg)
 }

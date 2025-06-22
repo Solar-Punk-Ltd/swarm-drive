@@ -27,3 +27,4 @@ jobs:
         run: npm test
         env:
           BEE_SIGNER_KEY: ${{ secrets.BEE_SIGNER_KEY }}
+          BEE_API: http://127.0.0.1:1633

@@ -13,6 +13,7 @@ import {
 import { SWARM_ZERO_ADDRESS } from "./constants";
 
 const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
+const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
 
 export function makeBareBeeClient(): Bee {
   const signerKey = process.env.BEE_SIGNER_KEY;
@@ -22,7 +23,7 @@ export function makeBareBeeClient(): Bee {
   if (!signerKey.startsWith("0x")) {
     throw new Error("🚨 BEE_SIGNER_KEY must start with 0x in your environment");
   }
-  return new Bee("http://localhost:1633", {
+  return new Bee(BEE_API, {
     signer: new PrivateKey(signerKey),
   });
 }
@@ -37,7 +38,6 @@ export async function createBeeClient(
   }
   const bee = new Bee(apiUrl, { signer: new PrivateKey(signerKey) })
 
-  // 2) look for an existing, usable batch
   let batch = (await bee.getAllPostageBatch()).find(
     (b) => b.label === SWARM_DRIVE_STAMP_LABEL && b.usable
   )
@@ -53,7 +53,6 @@ export async function createBeeClient(
       throw new Error('Cannot proceed without a postage stamp')
     }
     const batchID = await buyStamp(bee, amount, depth, SWARM_DRIVE_STAMP_LABEL)
-    // fetch it back out so we have the full PostageBatch object
     batch = (await bee.getAllPostageBatch()).find((b) => b.batchID.equals(batchID))!
   }
 
@@ -79,7 +78,6 @@ export async function buyStamp(
   if (existing) {
     return existing.batchID;
   }
-  // otherwise create one
   return await bee.createPostageBatch(amount, depth, {
     label,
     waitForUsable: true,
@@ -104,7 +102,6 @@ export async function updateManifest(
       );
       await node.loadRecursively(bee);
     } catch {
-      // invalid hash or missing → start fresh
       node = new MantarayNode();
     }
   } else {
@@ -115,7 +112,6 @@ export async function updateManifest(
     try {
       node.removeFork(prefix);
     } catch {
-      /* ignore */
     }
   } else {
     const data = await fs.readFile(localPath);
@@ -183,9 +179,8 @@ export async function readDriveFeed(
 ): Promise<string | undefined> {
   const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
 
-  // 1) Try “latest” (no index) → this returns the highest-written slot
   try {
-    const msg = await reader.download(); // latest
+    const msg = await reader.download();
     const raw = msg.payload.toUint8Array();
     if (raw.length === 32) {
       const ref = new BeeReference(raw);
@@ -194,10 +189,8 @@ export async function readDriveFeed(
       }
     }
   } catch {
-    // no latest entry yet or other error, we’ll fall back…
   }
 
-  // 2) Fallback: try slot 0 explicitly
   try {
     const msg0 = await reader.download({ index: FeedIndex.fromBigInt(0n) });
     const raw0 = msg0.payload.toUint8Array();
@@ -208,7 +201,6 @@ export async function readDriveFeed(
       }
     }
   } catch {
-    // still nothing
   }
 
   return undefined;
@@ -233,16 +225,14 @@ export async function readFeedIndex(
   ownerAddress: string
 ): Promise<bigint> {
   const reader = bee.makeFeedReader(topic.toUint8Array(), ownerAddress);
-  // first see if slot 0 exists
   try {
     await reader.download({ index: FeedIndex.fromBigInt(0n) });
   } catch (err: any) {
     if (err.status === 404) {
-      return -1n;    // truly empty
+      return -1n;
     }
     throw err;
   }
-  // slot 0 is there, so probe upward
   let idx = 1n;
   while (true) {
     try {
