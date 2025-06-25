@@ -7,12 +7,14 @@ export async function watchCmd(debounceMs: number) {
   const { localDir } = await loadConfig();
 
   console.log(`Watching ${localDir} for changes (debounce: ${debounceMs}ms)…`);
+  console.log("Initial sync on watch start…");
+  await syncCmd();
+
   const watcher = chokidar.watch(localDir, {
     ignoreInitial: true,
     depth: Infinity,
   });
 
-  // log when the watcher is ready, but don't await it—so tests don't hang:
   watcher.once("ready", () => {
     console.log("Watcher ready — now watching for file events…");
   });

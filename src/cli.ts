@@ -1,4 +1,3 @@
-// src/cli.ts
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import dotenv from "dotenv"
@@ -75,7 +74,6 @@ yargs(hideBin(process.argv))
   .help()
   .parseAsync()
   .catch((err) => {
-    // any unhandled rejection from your command handlers ends up here
     console.error(err)
     process.exit(1)
   })

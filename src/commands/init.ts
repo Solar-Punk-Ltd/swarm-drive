@@ -7,15 +7,17 @@ import { createBeeClient } from "../utils/swarm"
 const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
 
 export async function initCmd(localDir: string) {
+  const resolvedDir = path.resolve(localDir)
+
   try {
-    const stat = await fs.stat(localDir)
+    const stat = await fs.stat(resolvedDir)
     if (!stat.isDirectory()) throw new Error("Not a directory")
   } catch {
     console.error(`Error: \`${localDir}\` is invalid or not accessible.`)
     process.exit(1)
   }
 
-  const cfg: Config = { localDir }
+  const cfg: Config = { localDir: resolvedDir }
   await saveConfig(cfg)
 
   await fs.writeFile(
@@ -41,9 +43,7 @@ export async function initCmd(localDir: string) {
         err.message || err,
       )
     }
-  } else if (!process.env.BEE_SIGNER_KEY) {
-    console.log("BEE_SIGNER_KEY not set; skipping Bee client initialization")
   } else {
-    console.log("Non-interactive environment; skipping Bee client initialization")
+    console.log("BEE_SIGNER_KEY not set; skipping Bee client initialization")
   }
 }

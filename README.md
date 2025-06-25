@@ -38,6 +38,17 @@ npm run build
 
 ## 🧰 CLI Commands
 
+### Command Alias: 
+```bash 
+swarm-drive
+``` 
+
+```bash 
+npm run 
+```
+
+Both the above command works in the same way for a user. Commands enabled to be used with `swarm-drive` are listed below:
+
 ### 1. init
 
 Initialize a local folder for syncing:

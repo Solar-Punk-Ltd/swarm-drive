@@ -1,8 +1,8 @@
 {
-  "name": "swarm-sync-cli",
+  "name": "swarm-drive",
   "version": "0.1.0",
   "bin": {
-    "swarm-sync": "dist/cli.js"
+    "swarm-drive": "bin/swarm-drive.js"
   },
   "scripts": {
     "build": "tsc",
