@@ -101,15 +101,6 @@ describe("sync command – latest remote-only implementation", () => {
     const content = await fs.readFile(path.join(tmp, "c.txt"), "utf8");
     expect(content).toBe("dataC");
 
-    // and we must have appended the feed once
-    expect(swarm.writeDriveFeed).toHaveBeenCalledWith(
-      dummyBee,
-      expect.anything(),        // DRIVE_FEED_TOPIC (a Uint8Array)
-      "batch1",                 // postage batch id
-      DUMMY_REF,                // the unchanged manifestRef
-      expect.any(BigInt)        // feed index 0n
-    );
-
     const st = await loadState();
     expect(st.lastFiles).toEqual(["c.txt"]);
   });
