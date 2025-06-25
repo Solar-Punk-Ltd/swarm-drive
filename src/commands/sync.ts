@@ -74,13 +74,18 @@ export async function syncCmd() {
   }
   const remoteFiles = Object.keys(remoteMap)
 
+  // files new locally (to upload)
   const toAdd = localFiles.filter((f) => !remoteFiles.includes(f))
+  // files deleted locally (to remove remotely)
   const toDeleteRemote = remoteFiles.filter(
     (f) => prevFiles.includes(f) && !localFiles.includes(f)
   )
+  // files new remotely (to pull)
+  const toPullGeneral = remoteFiles.filter(
+    (f) => !localFiles.includes(f) && !prevFiles.includes(f)
+  )
 
-  const toPullGeneral = remoteFiles.filter((f) => !localFiles.includes(f))
-
+  // detect modifications/conflicts
   const toPullConflict: string[] = []
   const toUpload: string[] = []
   for (const f of localFiles.filter((f) => remoteMap[f])) {
@@ -101,7 +106,9 @@ export async function syncCmd() {
     }
   }
 
-  const toPull = Array.from(new Set([...toPullGeneral, ...toPullConflict]))
+  const toPull = Array.from(
+    new Set([...toPullGeneral, ...toPullConflict])
+  )
 
   console.log("[syncCmd] toAdd:", toAdd)
   console.log("[syncCmd] toDeleteRemote:", toDeleteRemote)
@@ -120,6 +127,7 @@ export async function syncCmd() {
 
   let newManifest = oldManifest
 
+  // pull remote-only or remote-new files
   for (const f of toPull) {
     console.log("⤵️  Pull →", f)
     const data = await downloadRemoteFile(bee, oldManifest!, f)
@@ -129,6 +137,7 @@ export async function syncCmd() {
     localFiles.push(f)
   }
 
+  // add new local files
   for (const f of toAdd) {
     console.log("➕ Add →", f)
     newManifest = await updateManifest(
@@ -141,9 +150,17 @@ export async function syncCmd() {
     )
   }
 
+  // upload modified local files
   for (const f of toUpload) {
     console.log("⬆️  Upload →", f)
-    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
+    newManifest = await updateManifest(
+      bee,
+      batchID,
+      newManifest,
+      "",
+      f,
+      true
+    )
     newManifest = await updateManifest(
       bee,
       batchID,
@@ -154,15 +171,25 @@ export async function syncCmd() {
     )
   }
 
+  // delete removed files remote
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete →", f)
-    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
+    newManifest = await updateManifest(
+      bee,
+      batchID,
+      newManifest,
+      "",
+      f,
+      true
+    )
   }
 
   console.log("[syncCmd] Pinning new manifest →", newManifest)
 
   const didChange =
-    toAdd.length > 0 || toUpload.length > 0 || toDeleteRemote.length > 0
+    toAdd.length > 0 ||
+    toUpload.length > 0 ||
+    toDeleteRemote.length > 0
   let nextIndex = lastIndex
   if (didChange) {
     nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n
