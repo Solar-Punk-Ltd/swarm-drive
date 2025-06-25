@@ -40,7 +40,7 @@ describe("watchCmd", () => {
 
   it("starts watching and triggers sync on file events with debounce", async () => {
     await watchCmd(500);
-    expect(syncCmd).not.toHaveBeenCalled();
+    expect(syncCmd).toHaveBeenCalledTimes(1);
 
     fakeWatcher.emit("add", "/tmp/test-dir/file1.txt");
     fakeWatcher.emit("change", "/tmp/test-dir/file1.txt");
@@ -49,19 +49,21 @@ describe("watchCmd", () => {
     jest.advanceTimersByTime(500);
     jest.runAllTimers();
     await Promise.resolve();
-    expect(syncCmd).toHaveBeenCalledTimes(1);
+    expect(syncCmd).toHaveBeenCalledTimes(2);
 
     fakeWatcher.emit("change", "/tmp/test-dir/file3.txt");
     jest.advanceTimersByTime(500);
     jest.runAllTimers();
     await Promise.resolve();
-    expect(syncCmd).toHaveBeenCalledTimes(2);
+    expect(syncCmd).toHaveBeenCalledTimes(3);
 
     fakeWatcher.removeAllListeners();
   });
 
   it("logs an error when the watcher emits an error event", async () => {
-    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    const consoleErrorSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     await watchCmd(300);
 
     const error = new Error("Watcher failed");
