@@ -74,21 +74,23 @@ export async function syncCmd() {
   }
   const remoteFiles = Object.keys(remoteMap)
 
-  // files new locally (to upload)
-  const toAdd = localFiles.filter((f) => !remoteFiles.includes(f))
-  // files deleted locally (to remove remotely)
-  const toDeleteRemote = remoteFiles.filter(
-    (f) => prevFiles.includes(f) && !localFiles.includes(f)
+  const toDeleteLocal = prevFiles.filter(
+    f => localFiles.includes(f) && !remoteFiles.includes(f)
   )
-  // files new remotely (to pull)
+  console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal)
+  
+  const toAdd = localFiles.filter(f => !remoteFiles.includes(f))
+  
+  const toDeleteRemote = remoteFiles.filter(
+    f => prevFiles.includes(f) && !localFiles.includes(f) && !toDeleteLocal.includes(f)
+  )
   const toPullGeneral = remoteFiles.filter(
-    (f) => !localFiles.includes(f) && !prevFiles.includes(f)
+    f => !localFiles.includes(f) && !prevFiles.includes(f)
   )
 
-  // detect modifications/conflicts
   const toPullConflict: string[] = []
   const toUpload: string[] = []
-  for (const f of localFiles.filter((f) => remoteMap[f])) {
+  for (const f of localFiles.filter(f => remoteMap[f])) {
     const abs = path.join(cfg.localDir, f)
     const [localBuf, remoteBuf] = await Promise.all([
       fs.readFile(abs),
@@ -105,18 +107,17 @@ export async function syncCmd() {
       }
     }
   }
-
-  const toPull = Array.from(
-    new Set([...toPullGeneral, ...toPullConflict])
-  )
+  const toPull = Array.from(new Set([...toPullGeneral, ...toPullConflict]))
 
   console.log("[syncCmd] toAdd:", toAdd)
+  console.log("[syncCmd] toDeleteLocal:", toDeleteLocal)
   console.log("[syncCmd] toDeleteRemote:", toDeleteRemote)
   console.log("[syncCmd] toPull:", toPull)
   console.log("[syncCmd] toUpload:", toUpload)
 
   if (
     toAdd.length === 0 &&
+    toDeleteLocal.length === 0 &&
     toDeleteRemote.length === 0 &&
     toPull.length === 0 &&
     toUpload.length === 0
@@ -127,18 +128,28 @@ export async function syncCmd() {
 
   let newManifest = oldManifest
 
-  // pull remote-only or remote-new files
+  for (const f of toDeleteLocal) {
+    console.log("🗑️  Remote deleted → removing local file", f)
+    const dst = path.join(cfg.localDir, f)
+    try { await fs.unlink(dst) } catch {}
+    const idx = localFiles.indexOf(f)
+    if (idx !== -1) localFiles.splice(idx, 1)
+  }
+
   for (const f of toPull) {
+    if (toDeleteLocal.includes(f)) continue
     console.log("⤵️  Pull →", f)
     const data = await downloadRemoteFile(bee, oldManifest!, f)
     const dst = path.join(cfg.localDir, f)
     await fs.mkdir(path.dirname(dst), { recursive: true })
     await fs.writeFile(dst, data)
-    localFiles.push(f)
+    if (!localFiles.includes(f)) {
+      localFiles.push(f)
+    }
   }
 
-  // add new local files
   for (const f of toAdd) {
+    if (toDeleteLocal.includes(f)) continue
     console.log("➕ Add →", f)
     newManifest = await updateManifest(
       bee,
@@ -150,17 +161,9 @@ export async function syncCmd() {
     )
   }
 
-  // upload modified local files
   for (const f of toUpload) {
     console.log("⬆️  Upload →", f)
-    newManifest = await updateManifest(
-      bee,
-      batchID,
-      newManifest,
-      "",
-      f,
-      true
-    )
+    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
     newManifest = await updateManifest(
       bee,
       batchID,
@@ -171,25 +174,19 @@ export async function syncCmd() {
     )
   }
 
-  // delete removed files remote
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete →", f)
-    newManifest = await updateManifest(
-      bee,
-      batchID,
-      newManifest,
-      "",
-      f,
-      true
-    )
+    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
   }
 
   console.log("[syncCmd] Pinning new manifest →", newManifest)
 
+  const realAdds = toAdd.filter(f => !toDeleteLocal.includes(f))
   const didChange =
-    toAdd.length > 0 ||
+    realAdds.length > 0 ||
     toUpload.length > 0 ||
     toDeleteRemote.length > 0
+
   let nextIndex = lastIndex
   if (didChange) {
     nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n
