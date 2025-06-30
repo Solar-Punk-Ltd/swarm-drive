@@ -1,6 +1,7 @@
 export interface Config {
   localDir: string;
-  watchIntervalMinutes?: number;
+  watchIntervalSeconds?: number;
+  scheduleIntervalSeconds?: number;
 }
 
 export interface State {

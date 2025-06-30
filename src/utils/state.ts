@@ -4,6 +4,7 @@ import path from "path"
 export interface State {
   lastFiles?: string[]
   lastSync?: string
+  currentMode?: "watch" | "schedule"
 }
 
 const STATE_PATH = path.resolve(process.cwd(), ".swarm-sync-state.json")

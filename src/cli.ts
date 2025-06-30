@@ -7,6 +7,8 @@ import { initCmd } from "./commands/init"
 import { syncCmd } from "./commands/sync"
 import { watchCmd } from "./commands/watch"
 import { scheduleCmd } from "./commands/schedule"
+import { statusCmd } from "./commands/status";
+import { configSetCmd, configGetCmd } from "./commands/config";
 
 import {
   listStamps,
@@ -30,23 +32,21 @@ yargs(hideBin(process.argv))
   .command(
     "watch",
     "Watch local folder for changes and sync",
-    (y) =>
-      y.option("debounce", {
-        type: "number",
-        default: 300,
-        describe: "Debounce interval (ms)",
-      }),
-    (argv) => watchCmd(argv.debounce as number)
+    y => y.option("debounce", {
+      type: "number",
+      describe: "Debounce interval (ms) — overrides config.watchIntervalSeconds",
+    }),
+    argv => watchCmd(argv.debounce as number | undefined)
   )
   .command(
-    "schedule <intervalMs>",
-    "Run sync every <intervalMs> milliseconds",
-    (y) =>
-      y.positional("intervalMs", {
+    "schedule <intervalSec>",
+    "Run sync every <intervalSec> seconds",
+    y =>
+      y.positional("intervalSec", {
         type: "number",
-        describe: "Interval in milliseconds (e.g. 60000 for 1 minute)",
+        describe: "Interval in seconds (e.g. 60 for 1 minute)",
       }),
-    (argv) => scheduleCmd(argv.intervalMs as number)
+    (argv) => scheduleCmd(argv.intervalSec as number)
   )
   .command("stamp-list", "List postage stamps", () => {}, () => listStamps())
   .command(
@@ -69,6 +69,41 @@ yargs(hideBin(process.argv))
         describe: "The 32-byte Swarm manifest hash",
       }),
     (argv) => manifestLs(argv.manifestRef as string)
+  )
+  .command(
+    "status",
+    "Show current configuration and last sync status",
+    () => {},
+    () => statusCmd()
+  )
+  .command(
+    "config <action> [key] [value]",
+    "Get or set configuration",
+    y =>
+      y
+        .positional("action", {
+          choices: ["get", "set"],
+          describe: "Whether to read or update a setting",
+        })
+        .positional("key", {
+          type: "string",
+          describe: "Config key (e.g. localDir, watchIntervalSeconds)",
+        })
+        .positional("value", {
+          type: "string",
+          describe: "New value (only required for set)",
+        }),
+    async argv => {
+      if (argv.action === "get") {
+        await configGetCmd(argv.key!);
+      } else {
+        if (argv.value === undefined) {
+          console.error("Error: missing value for config set");
+          process.exit(1);
+        }
+        await configSetCmd(argv.key!, argv.value);
+      }
+    }
   )
   .demandCommand(1, "You need to specify a command")
   .help()
