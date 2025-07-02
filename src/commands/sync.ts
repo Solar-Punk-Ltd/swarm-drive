@@ -35,17 +35,18 @@ export async function syncCmd() {
     process.env.BEE_SIGNER_KEY!
   )
   const batchID = swarmDriveBatch.batchID
-  const ownerAddress = bee.signer!.publicKey().address().toString()
-  console.log("[syncCmd] Bee ready → owner:", ownerAddress)
+  const owner = bee.signer!.publicKey().address().toString()
+  console.log("[syncCmd] Bee ready → owner:", owner)
+  console.log("[syncCmd] Stamp remaining bytes →", swarmDriveBatch.remainingSize?.toBytes())
 
-  const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, ownerAddress)
+  const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, owner)
   console.log("[syncCmd] feed@latest index →", lastIndex)
 
   let oldManifest: string | undefined
   if (lastIndex >= 0n) {
     const reader = bee.makeFeedReader(
       DRIVE_FEED_TOPIC.toUint8Array(),
-      ownerAddress
+      owner
     )
     const msg = await reader.download({ index: FeedIndex.fromBigInt(lastIndex) })
     const raw = msg.payload.toUint8Array()
@@ -75,14 +76,13 @@ export async function syncCmd() {
   const remoteFiles = Object.keys(remoteMap)
 
   const toDeleteLocal = prevFiles.filter(
-    f => localFiles.includes(f) && !remoteFiles.includes(f)
+    f => localFiles.includes(f) && !remoteFiles.includes(f)  
   )
   console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal)
-  
+
   const toAdd = localFiles.filter(f => !remoteFiles.includes(f))
-  
   const toDeleteRemote = remoteFiles.filter(
-    f => prevFiles.includes(f) && !localFiles.includes(f) && !toDeleteLocal.includes(f)
+    f => prevFiles.includes(f) && !localFiles.includes(f)
   )
   const toPullGeneral = remoteFiles.filter(
     f => !localFiles.includes(f) && !prevFiles.includes(f)
@@ -123,17 +123,25 @@ export async function syncCmd() {
     toUpload.length === 0
   ) {
     console.log("✅ [syncCmd] Nothing to sync.")
+    await saveState({ lastFiles: localFiles, lastSync: new Date().toISOString() })
     return
+  }
+
+  const totalBytes = (await Promise.all(
+    [...toAdd, ...toUpload].map(f => fs.stat(path.join(cfg.localDir, f)))
+  )).reduce((sum, s) => sum + s.size, 0)
+  if (totalBytes > swarmDriveBatch.remainingSize?.toBytes()) {
+    throw new Error(
+      `Stamp capacity exceeded: need ${totalBytes} bytes, but only ${swarmDriveBatch.remainingSize?.toBytes()} bytes remaining in batch ${batchID}`
+    )
   }
 
   let newManifest = oldManifest
 
   for (const f of toDeleteLocal) {
     console.log("🗑️  Remote deleted → removing local file", f)
-    const dst = path.join(cfg.localDir, f)
-    try { await fs.unlink(dst) } catch {}
-    const idx = localFiles.indexOf(f)
-    if (idx !== -1) localFiles.splice(idx, 1)
+    await fs.rm(path.join(cfg.localDir, f), { force: true })
+    localFiles.splice(localFiles.indexOf(f), 1)
   }
 
   for (const f of toPull) {
@@ -143,13 +151,10 @@ export async function syncCmd() {
     const dst = path.join(cfg.localDir, f)
     await fs.mkdir(path.dirname(dst), { recursive: true })
     await fs.writeFile(dst, data)
-    if (!localFiles.includes(f)) {
-      localFiles.push(f)
-    }
+    if (!localFiles.includes(f)) localFiles.push(f)
   }
 
   for (const f of toAdd) {
-    if (toDeleteLocal.includes(f)) continue
     console.log("➕ Add →", f)
     newManifest = await updateManifest(
       bee,
@@ -179,33 +184,17 @@ export async function syncCmd() {
     newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
   }
 
-  console.log("[syncCmd] Pinning new manifest →", newManifest)
-
   const realAdds = toAdd.filter(f => !toDeleteLocal.includes(f))
-  const didChange =
-    realAdds.length > 0 ||
-    toUpload.length > 0 ||
-    toDeleteRemote.length > 0
-
+  const didChange = realAdds.length > 0 || toUpload.length > 0 || toDeleteRemote.length > 0
   let nextIndex = lastIndex
   if (didChange) {
     nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n
     console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifest)
-    await writeDriveFeed(
-      bee,
-      DRIVE_FEED_TOPIC,
-      batchID,
-      newManifest!,
-      nextIndex
-    )
+    await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, newManifest!, nextIndex)
   } else {
     console.log("✅ [syncCmd] No uploads to feed; skipping feed update.")
   }
 
-  await saveState({
-    lastFiles: localFiles,
-    lastSync: new Date().toISOString(),
-  })
-
+  await saveState({ lastFiles: localFiles, lastSync: new Date().toISOString() })
   console.log(`✅ [syncCmd] Done → feed@${nextIndex}`)
 }

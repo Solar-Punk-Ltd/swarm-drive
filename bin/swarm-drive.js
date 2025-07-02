@@ -3,6 +3,10 @@
 
 const path = require("path");
 
+require("dotenv").config({
+  path: path.resolve(__dirname, "../.env"),
+});
+
 // 1) register TS-Node so we can import .ts files
 require("ts-node").register({
   project: path.resolve(__dirname, "../tsconfig.json"),
