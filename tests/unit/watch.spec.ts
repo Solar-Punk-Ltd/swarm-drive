@@ -39,7 +39,7 @@ describe("watchCmd", () => {
   });
 
   it("starts watching and triggers sync on file events with debounce", async () => {
-    await watchCmd(500);
+    await watchCmd(0.5);
     expect(syncCmd).toHaveBeenCalledTimes(1);
 
     fakeWatcher.emit("add", "/tmp/test-dir/file1.txt");
@@ -64,7 +64,7 @@ describe("watchCmd", () => {
     const consoleErrorSpy = jest
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    await watchCmd(300);
+    await watchCmd(0.3);
 
     const error = new Error("Watcher failed");
     fakeWatcher.emit("error", error);

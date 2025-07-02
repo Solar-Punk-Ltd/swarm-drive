@@ -4,12 +4,12 @@ import { loadConfig } from "../utils/config";
 import { loadState, saveState } from "../utils/state";
 import { syncCmd } from "./sync";
 
-export async function watchCmd(debounceMs?: number) {
+export async function watchCmd(debounceSec?: number) {
   const { localDir, watchIntervalSeconds } = await loadConfig();
 
   const ms =
-    debounceMs !== undefined
-      ? debounceMs
+    debounceSec !== undefined
+      ? debounceSec * 1000
       : watchIntervalSeconds !== undefined
       ? watchIntervalSeconds * 1000
       : 300;

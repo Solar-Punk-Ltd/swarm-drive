@@ -31,14 +31,14 @@ describe("scheduleCmd", () => {
   it("runs syncCmd once immediately and then schedules at given interval", async () => {
     (syncCmd as jest.Mock).mockResolvedValue(undefined);
 
-    const neverResolves = scheduleCmd(5000);
+    const neverResolves = scheduleCmd(5);
 
     await Promise.resolve();
     await Promise.resolve();
 
     expect(syncCmd).toHaveBeenCalledTimes(1);
     expect(console.log).toHaveBeenCalledWith(
-      'Scheduling sync for "dummy" every 5000 ms…'
+      'Scheduling sync for "dummy" every 5 seconds…'
     );
     expect(console.log).toHaveBeenCalledWith("Initial run: running sync now…");
 
@@ -59,7 +59,7 @@ describe("scheduleCmd", () => {
       .mockImplementationOnce(async () => {})
       .mockRejectedValueOnce(new Error("sync failed"));
 
-    const neverResolves = scheduleCmd(2000);
+    const neverResolves = scheduleCmd(2);
 
     await Promise.resolve();
     await Promise.resolve();

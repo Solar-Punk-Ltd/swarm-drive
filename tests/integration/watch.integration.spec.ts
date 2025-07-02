@@ -98,10 +98,10 @@ describe("Swarm-CLI Integration Test: watch", () => {
     );
     expect(initResult.status).toBe(0);
 
-    // 2) Start `swarm-cli watch --debounce 100` in a long-running child process
+    // 2) Start `swarm-cli watch --debounce 0.1` in a long-running child process
     watchProc = spawn(
       process.execPath,
-      [CLI_PATH, "watch", "--debounce", "100"],
+      [CLI_PATH, "watch", "--debounce", "0.1"],
       {
         cwd: tmpDir,
         env: { ...process.env, BEE_SIGNER_KEY: signerKey },

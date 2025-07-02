@@ -6,16 +6,17 @@ export async function scheduleCmd(intervalSec: number): Promise<void> {
   const { localDir } = await loadConfig();
 
   console.log(`Scheduling sync for "${localDir}" every ${intervalSec} seconds…`);
-
   console.log("Initial run: running sync now…");
   await syncCmd();
 
-  const state = await loadState();
-  state.currentMode = "schedule";
-  await saveState(state);
+  loadState()
+    .then((state) => {
+      state.currentMode = "schedule";
+      return saveState(state);
+    })
+    .catch(() => {});
 
   setInterval(async () => {
-    console.log("Scheduled interval reached: running sync…");
     try {
       await syncCmd();
     } catch (err) {

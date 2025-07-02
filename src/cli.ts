@@ -18,68 +18,79 @@ import {
 } from "./commands/helpers"
 
 yargs(hideBin(process.argv))
-  .command(
-    "init <localDir>",
-    "Initialize Swarm Drive",
-    (y) =>
+  .command({
+    command: "init <localDir>",
+    describe: "Initialize Swarm Drive",
+    builder: (y) =>
       y.positional("localDir", {
         type: "string",
         describe: "Local folder path",
       }),
-    (argv) => initCmd(argv.localDir as string)
-  )
-  .command("sync", "Sync local folder to Swarm", () => {}, () => syncCmd())
-  .command(
-    "watch",
-    "Watch local folder for changes and sync",
-    y => y.option("debounce", {
-      type: "number",
-      describe: "Debounce interval (ms) — overrides config.watchIntervalSeconds",
-    }),
-    argv => watchCmd(argv.debounce as number | undefined)
-  )
-  .command(
-    "schedule <intervalSec>",
-    "Run sync every <intervalSec> seconds",
-    y =>
+    handler: (argv) => initCmd(argv.localDir as string),
+  })
+  .command({
+    command: "sync",
+    describe: "Sync local folder to Swarm",
+    handler: () => syncCmd(),
+  })
+  .command({
+    command: "watch [--debounce s]",
+    describe: "Watch local folder for changes and sync",
+    builder: (y) =>
+      y.option("debounce", {
+        type: "number",
+        describe: "Debounce interval (s) — overrides config.watchIntervalSeconds",
+      }),
+    handler: (argv) => watchCmd(argv.debounce as number | undefined),
+  })
+  .command({
+    command: "schedule <intervalSec>",
+    describe: "Run sync every <intervalSec> seconds",
+    builder: (y) =>
       y.positional("intervalSec", {
-        type: "number",
-        describe: "Interval in seconds (e.g. 60 for 1 minute)",
-      }),
-    (argv) => scheduleCmd(argv.intervalSec as number)
-  )
-  .command("stamp-list", "List postage stamps", () => {}, () => listStamps())
-  .command(
-    "feed-get [index]",
-    "Read a feed entry (omit for latest)",
-    (y) =>
-      y.positional("index", {
-        type: "number",
-        describe: "Optional feed index",
-      }),
-    (argv) => feedGet(argv.index as number | undefined)
-  )
-  .command("feed-ls", "Alias for feed-get latest", () => {}, () => feedLs())
-  .command(
-    "manifest-ls <manifestRef>",
-    "List all files under a given manifest reference",
-    (y) =>
-      y.positional("manifestRef", {
+          type: "number",
+          describe: "Interval in seconds (e.g. 60 for 1 minute)",
+        }),
+    handler: (argv) => scheduleCmd(argv.intervalSec as number),
+  })
+  .command({
+    command: "stamp-list",
+    describe: "List postage stamps",
+    handler: () => listStamps(),
+  })
+  .command({
+    command: "feed-get [index]",
+    describe: "Read a feed entry (omit for latest)",
+    builder: {
+      index: { type: "number", describe: "Optional feed index" },
+    },
+    handler: (argv) => feedGet(argv.index as number | undefined),
+  })
+  .command({
+    command: "feed-ls",
+    describe: "Alias for feed-get latest",
+    handler: () => feedLs(),
+  })
+  .command({
+    command: "manifest-ls <manifestRef>",
+    describe: "List all files under a given manifest reference",
+    builder: {
+      manifestRef: {
         type: "string",
         describe: "The 32-byte Swarm manifest hash",
-      }),
-    (argv) => manifestLs(argv.manifestRef as string)
-  )
-  .command(
-    "status",
-    "Show current configuration and last sync status",
-    () => {},
-    () => statusCmd()
-  )
-  .command(
-    "config <action> [key] [value]",
-    "Get or set configuration",
-    y =>
+      },
+    },
+    handler: (argv) => manifestLs(argv.manifestRef as string),
+  })
+  .command({
+    command: "status",
+    describe: "Show current configuration and last sync status",
+    handler: () => statusCmd(),
+  })
+  .command({
+    command: "config <action> [key] [value]",
+    describe: "Get or set configuration",
+    builder: (y) =>
       y
         .positional("action", {
           choices: ["get", "set"],
@@ -93,7 +104,7 @@ yargs(hideBin(process.argv))
           type: "string",
           describe: "New value (only required for set)",
         }),
-    async argv => {
+    handler: async (argv) => {
       if (argv.action === "get") {
         await configGetCmd(argv.key!);
       } else {
@@ -103,8 +114,8 @@ yargs(hideBin(process.argv))
         }
         await configSetCmd(argv.key!, argv.value);
       }
-    }
-  )
+    },
+  })
   .demandCommand(1, "You need to specify a command")
   .help()
   .parseAsync()
