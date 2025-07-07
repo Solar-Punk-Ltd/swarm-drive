@@ -3,6 +3,8 @@ import path from "path"
 
 export interface State {
   lastFiles?: string[]
+  skipFiles?: string[]
+  lastRemoteFiles?: string[]
   lastSync?: string
   currentMode?: "watch" | "schedule"
 }

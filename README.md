@@ -96,16 +96,16 @@ npm run watch
 
 #### override to 10s debounce:  
 ```bash  
-npm run watch -- --debounce 10000
+npm run watch -- --debounce 10
 ```
 Uses `chokidar` under the hood, debouncing rapid events.
 
 ### 4. schedule
 
-Run `sync` every _intervalMs_ milliseconds:
+Run `sync` every _intervalS_ seconds:
 
 ```bash    
-npm run schedule -- 60000
+npm run schedule -- 60
 ```
 
 This will:

@@ -41,7 +41,7 @@ describe("Swarm-CLI Integration Tests (init only)", () => {
     expect(result.status).toBe(0);
 
     const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
-    expect(cfg.localDir).toBe(folderName);
+    expect(cfg.localDir).toBe(path.resolve(folderName));
 
     const stateFile = path.join(tmpDir, ".swarm-sync-state.json");
     expect(fs.existsSync(stateFile)).toBe(true);

@@ -123,6 +123,34 @@ export async function updateManifest(
   return saved.reference.toString();
 }
 
+export async function safeUpdateManifest(
+  bee: Bee,
+  batchId: BatchId,
+  manifestRef: string | undefined,
+  localPath: string,
+  prefix: string,
+  remove = false
+): Promise<string> {
+  try {
+    return await updateManifest(
+      bee,
+      batchId,
+      manifestRef,
+      localPath,
+      prefix,
+      remove,
+    )
+  } catch (err: any) {
+    if (err.message.includes("Invalid array length")) {
+      throw new Error(
+        `Stamp capacity low: cannot update manifest with "${prefix}". ` +
+        `You’ll need a larger batch for this file.`
+      )
+    }
+    throw err
+  }
+}
+
 export async function listRemoteFilesMap(
   bee: Bee,
   manifestRef: string

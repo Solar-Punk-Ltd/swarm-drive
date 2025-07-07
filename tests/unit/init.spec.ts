@@ -57,7 +57,7 @@ describe("init command", () => {
 
     // 1) config file
     const cfg = await loadConfig();
-    expect(cfg.localDir).toBe(localDir);
+    expect(cfg.localDir).toBe(path.resolve(localDir));
     expect(cfg).not.toHaveProperty("volumeRef");
 
     // 2) empty state file

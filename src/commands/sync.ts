@@ -10,7 +10,7 @@ import {
   createBeeClient,
   downloadRemoteFile,
   listRemoteFilesMap,
-  updateManifest,
+  safeUpdateManifest,
   writeDriveFeed,
   readFeedIndex,
 } from "../utils/swarm"
@@ -26,6 +26,8 @@ export async function syncCmd() {
   const cfg = await loadConfig()
   const state = await loadState()
   const prevFiles = state.lastFiles || []
+  const prevRemote = state.lastRemoteFiles || []
+  const prevSkipped = state.skipFiles || []
   const lastSyncTime = state.lastSync ? Date.parse(state.lastSync) : 0
 
   console.log("[syncCmd] Loaded state:", state)
@@ -36,10 +38,13 @@ export async function syncCmd() {
   )
   const batchID = swarmDriveBatch.batchID
   const owner = bee.signer!.publicKey().address().toString()
-  console.log("[syncCmd] Bee ready → owner:", owner)
-  console.log("[syncCmd] Stamp remaining bytes →", swarmDriveBatch.remainingSize?.toBytes())
+  const rawRemaining = swarmDriveBatch.remainingSize?.toBytes() ?? 0
+  const remainingBytes = BigInt(rawRemaining)
 
+  console.log("[syncCmd] Bee ready → owner:", owner)
+  console.log(`[syncCmd] Stamp remaining bytes → ${rawRemaining} bytes`)
   const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, owner)
+
   console.log("[syncCmd] feed@latest index →", lastIndex)
 
   let oldManifest: string | undefined
@@ -75,12 +80,17 @@ export async function syncCmd() {
   }
   const remoteFiles = Object.keys(remoteMap)
 
-  const toDeleteLocal = prevFiles.filter(
-    f => localFiles.includes(f) && !remoteFiles.includes(f)  
+  let toDeleteLocal = prevRemote.filter(
+    f =>
+      localFiles.includes(f) &&
+      !remoteFiles.includes(f) &&
+      !(state.skipFiles || []).includes(f)
   )
   console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal)
 
-  const toAdd = localFiles.filter(f => !remoteFiles.includes(f))
+  let toAdd = localFiles.filter(
+    f => !remoteFiles.includes(f) && !toDeleteLocal.includes(f)
+  )
   const toDeleteRemote = remoteFiles.filter(
     f => prevFiles.includes(f) && !localFiles.includes(f)
   )
@@ -89,7 +99,7 @@ export async function syncCmd() {
   )
 
   const toPullConflict: string[] = []
-  const toUpload: string[] = []
+  let toUpload: string[] = []
   for (const f of localFiles.filter(f => remoteMap[f])) {
     const abs = path.join(cfg.localDir, f)
     const [localBuf, remoteBuf] = await Promise.all([
@@ -122,18 +132,55 @@ export async function syncCmd() {
     toPull.length === 0 &&
     toUpload.length === 0
   ) {
-    console.log("✅ [syncCmd] Nothing to sync.")
-    await saveState({ lastFiles: localFiles, lastSync: new Date().toISOString() })
-    return
+      console.log("✅ [syncCmd] Nothing to sync.")
+      state.lastFiles = localFiles
+      state.lastSync = new Date().toISOString()
+      await saveState(state)
+      return
   }
 
-  const totalBytes = (await Promise.all(
-    [...toAdd, ...toUpload].map(f => fs.stat(path.join(cfg.localDir, f)))
-  )).reduce((sum, s) => sum + s.size, 0)
-  if (totalBytes > swarmDriveBatch.remainingSize?.toBytes()) {
-    throw new Error(
-      `Stamp capacity exceeded: need ${totalBytes} bytes, but only ${swarmDriveBatch.remainingSize?.toBytes()} bytes remaining in batch ${batchID}`
-    )
+  const candidates = [...toAdd, ...toUpload];
+  if (candidates.length > 0) {
+    const stats = await Promise.all(
+      candidates.map((f) =>
+        fs.stat(path.join(cfg.localDir, f)).then((s) => ({ path: f, size: s.size }))
+      )
+    );
+    stats.sort((a, b) => a.size - b.size);
+
+    const totalCandidates = stats.reduce((sum, s) => sum + s.size, 0);
+    console.log(
+      `[syncCmd] stamp has ${rawRemaining} bytes left; total drive size needed = ${totalCandidates} bytes`
+    );
+
+    let used = 0n;
+    const willUpload = new Set<string>();
+    const skipped: string[] = [];
+
+    for (const { path: file, size } of stats) {
+      const sz = BigInt(size);
+      if (used + sz <= remainingBytes) {
+        used += sz;
+        willUpload.add(file);
+      } else {
+        skipped.push(file);
+      }
+    }
+
+    if (skipped.length) {
+      console.warn(`[syncCmd] Stamp full: skipping ${skipped.length} file(s):`, skipped);
+
+      const skippedSet = new Set(skipped);
+      toDeleteLocal = toDeleteLocal.filter((f) => !skippedSet.has(f));
+      console.log("[syncCmd] Preserving capacity-skipped files from deletion:", skipped);
+
+      state.skipFiles = Array.from(
+        new Set([...(state.skipFiles || []), ...skipped])
+      );
+    }
+
+    toAdd = toAdd.filter((f) => willUpload.has(f));
+    toUpload = toUpload.filter((f) => willUpload.has(f));
   }
 
   let newManifest = oldManifest
@@ -154,34 +201,48 @@ export async function syncCmd() {
     if (!localFiles.includes(f)) localFiles.push(f)
   }
 
+  const succeededAdds: string[] = []
   for (const f of toAdd) {
     console.log("➕ Add →", f)
-    newManifest = await updateManifest(
-      bee,
-      batchID,
-      newManifest,
-      path.join(cfg.localDir, f),
-      f,
-      false
-    )
+    try {
+      newManifest = await safeUpdateManifest(
+        bee,
+        batchID,
+        newManifest,
+        path.join(cfg.localDir, f),
+        f,
+        false
+      )
+      succeededAdds.push(f)
+    } catch (err: any) {
+      console.error(`Error uploading "${f}":`, err.message)
+    }
   }
+  toAdd = succeededAdds
 
+  const succeededUploads: string[] = []
   for (const f of toUpload) {
     console.log("⬆️  Upload →", f)
-    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
-    newManifest = await updateManifest(
-      bee,
-      batchID,
-      newManifest,
-      path.join(cfg.localDir, f),
-      f,
-      false
-    )
+    try {
+      newManifest = await safeUpdateManifest(bee, batchID, newManifest, "", f, true)
+      newManifest = await safeUpdateManifest(
+        bee,
+        batchID,
+        newManifest,
+        path.join(cfg.localDir, f),
+        f,
+        false
+      )
+      succeededUploads.push(f)
+    } catch (err: any) {
+      console.error(`Error updating "${f}":`, err.message)
+    }
   }
+  toUpload = succeededUploads
 
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete →", f)
-    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
+    newManifest = await safeUpdateManifest(bee, batchID, newManifest, "", f, true)
   }
 
   const realAdds = toAdd.filter(f => !toDeleteLocal.includes(f))
@@ -195,6 +256,10 @@ export async function syncCmd() {
     console.log("✅ [syncCmd] No uploads to feed; skipping feed update.")
   }
 
-  await saveState({ lastFiles: localFiles, lastSync: new Date().toISOString() })
-  console.log(`✅ [syncCmd] Done → feed@${nextIndex}`)
+  state.lastRemoteFiles = remoteFiles
+
+  state.lastFiles = localFiles
+  state.lastSync = new Date().toISOString()
+  await saveState(state)
+
 }

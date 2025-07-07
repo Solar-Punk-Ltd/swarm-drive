@@ -17,7 +17,7 @@ export async function initCmd(localDir: string) {
     process.exit(1)
   }
 
-  const cfg: Config = { localDir }
+  const cfg: Config = { localDir: resolvedDir }
   await saveConfig(cfg)
 
   await fs.writeFile(
