@@ -80,12 +80,16 @@ export async function syncCmd() {
   }
   const remoteFiles = Object.keys(remoteMap)
 
-  let toDeleteLocal = prevRemote.filter(
-    f =>
-      localFiles.includes(f) &&
-      !remoteFiles.includes(f) &&
-      !(state.skipFiles || []).includes(f)
+  const prevLocal = state.lastFiles || []
+  const skipped   = new Set(state.skipFiles || [])
+
+  let toDeleteLocal = prevLocal.filter(f =>
+    localFiles.includes(f) &&
+    !remoteFiles.includes(f) &&
+    prevRemote.includes(f) &&
+    !skipped.has(f)
   )
+
   console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal)
 
   let toAdd = localFiles.filter(
@@ -132,11 +136,12 @@ export async function syncCmd() {
     toPull.length === 0 &&
     toUpload.length === 0
   ) {
-      console.log("✅ [syncCmd] Nothing to sync.")
-      state.lastFiles = localFiles
-      state.lastSync = new Date().toISOString()
-      await saveState(state)
-      return
+     console.log("✅ [syncCmd] Nothing to sync.")
+     state.lastFiles = localFiles
+     state.lastRemoteFiles = remoteFiles
+     state.lastSync = new Date().toISOString()
+     await saveState(state)
+     return
   }
 
   const candidates = [...toAdd, ...toUpload];

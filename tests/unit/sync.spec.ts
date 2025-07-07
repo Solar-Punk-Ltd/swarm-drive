@@ -7,6 +7,8 @@ import { saveConfig } from "../../src/utils/config";
 import { loadState, saveState } from "../../src/utils/state";
 
 jest.mock("../../src/utils/swarm");
+jest.spyOn(swarm, "downloadRemoteFile")
+    .mockResolvedValue(new Uint8Array());
 
 describe("sync command – latest remote-only implementation", () => {
   const tmp = path.join(os.tmpdir(), `swarm-drive-test-sync-${Date.now()}`);
