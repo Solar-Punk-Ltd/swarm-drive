@@ -40,6 +40,10 @@ All unit tests live in `tests/unit/` and cover:
   - `watchCmd` file–event debounce & error handling
 - **schedule** (`schedule.spec.ts`)  
   - `scheduleCmd` invocation & timer behavior
+- **status** (`status.spec.ts`)  
+  - `statusCmd` output formatting, missing-config error, and modes (`manual`/`watch`/`schedule`)  
+- **config** (`config.spec.ts`)  
+  - `configSetCmd` and `configGetCmd` set/get behaviors, valid/invalid keys and values  
 
 ### Run just unit tests
 
@@ -63,6 +67,10 @@ Detailed end‑to‑end or service‑level tests live in `tests/integration/`, v
   Tests `watch` command detects file changes and publishes updates to the feed manifest.  
 - **schedule** (`schedule.integration.spec.ts`)  
   Tests `schedule` command performs an initial sync and repeats at the configured interval.  
+- **status** (`status.integration.spec.ts`)  
+  Tests the `status` command’s exit codes and output for missing and present config/state.  
+- **config** (`config.integration.spec.ts`)  
+  Tests `config get` and `config set` end-to-end, including valid updates and error handling for invalid keys or values.  
 
 ### Run just integration tests
 
