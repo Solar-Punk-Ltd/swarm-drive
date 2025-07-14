@@ -5,7 +5,6 @@ dotenv.config()
 
 import { initCmd } from "./commands/init"
 import { syncCmd } from "./commands/sync"
-import { watchCmd } from "./commands/watch"
 import { scheduleCmd } from "./commands/schedule"
 import { statusCmd } from "./commands/status";
 import { configSetCmd, configGetCmd } from "./commands/config";
@@ -32,16 +31,6 @@ yargs(hideBin(process.argv))
     command: "sync",
     describe: "Sync local folder to Swarm",
     handler: () => syncCmd(),
-  })
-  .command({
-    command: "watch [--debounce s]",
-    describe: "Watch local folder for changes and sync",
-    builder: (y) =>
-      y.option("debounce", {
-        type: "number",
-        describe: "Debounce interval (s) — overrides config.watchIntervalSeconds",
-      }),
-    handler: (argv) => watchCmd(argv.debounce as number | undefined),
   })
   .command({
     command: "schedule <intervalSec>",
