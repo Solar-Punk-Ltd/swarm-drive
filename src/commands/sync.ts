@@ -70,6 +70,10 @@ export async function syncCmd() {
   console.log("[syncCmd] prevFiles:", prevFiles)
   console.log("[syncCmd] localFiles:", localFiles)
 
+  if (state.skipFiles) {
+    state.skipFiles = state.skipFiles.filter((f) => localFiles.includes(f));
+  }
+  
   let remoteMap: Record<string, string> = {}
   if (oldManifest) {
     try {
