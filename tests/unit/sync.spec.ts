@@ -102,7 +102,10 @@ describe("sync command – latest remote-only implementation", () => {
 
     (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "b.txt": "refB" });
-    (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("old"));
+    (swarm.downloadRemoteFile as jest.Mock)
+      .mockResolvedValueOnce(Buffer.from("old"))
+      .mockResolvedValueOnce(Buffer.from("old"));
+    
 
     const REMOVED_REF = "c".repeat(64);
     const NEW_REF     = "d".repeat(64);
