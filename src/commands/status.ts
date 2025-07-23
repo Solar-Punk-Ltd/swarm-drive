@@ -7,9 +7,7 @@ export async function statusCmd(): Promise<void> {
     cfg = await loadConfig();
     if (!cfg.localDir) throw new Error();
   } catch {
-    console.error(
-      'Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.'
-    );
+    console.error('Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.');
     process.exit(1);
   }
 
@@ -38,12 +36,10 @@ export async function statusCmd(): Promise<void> {
     const last = new Date(state.lastSync);
     const diffMs = Date.now() - last.getTime();
     const minsAgo = Math.floor(diffMs / 60000);
-    console.log(
-      `lastSync: ${state.lastSync} (${minsAgo} minute${minsAgo === 1 ? "" : "s"} ago)`
-    );
+    console.log(`lastSync: ${state.lastSync} (${minsAgo} minute${minsAgo === 1 ? "" : "s"} ago)`);
   } else {
     console.log("lastSync: <no sync yet> — run “swarm-drive sync” to perform first upload");
-}
+  }
 
   if (state.lastFiles) {
     console.log(`lastFiles: ${state.lastFiles.length} files`);

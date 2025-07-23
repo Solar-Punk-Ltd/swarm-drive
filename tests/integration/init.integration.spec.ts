@@ -30,14 +30,10 @@ describe("Swarm-CLI Integration Tests (init only)", () => {
     const folderName = "myFolder";
     fs.ensureDirSync(path.join(tmpDir, folderName));
 
-    const result = spawnSync(
-      process.execPath,
-      [CLI_PATH, "init", folderName],
-      {
-        cwd: tmpDir,
-        encoding: "utf-8",
-      }
-    );
+    const result = spawnSync(process.execPath, [CLI_PATH, "init", folderName], {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
     expect(result.status).toBe(0);
 
     const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));

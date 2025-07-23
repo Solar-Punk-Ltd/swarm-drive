@@ -25,32 +25,24 @@ describe("Swarm-CLI Integration Tests (status)", () => {
   });
 
   function runCli(args: string[]) {
-    return spawnSync(
-      process.execPath,
-      [CLI_PATH, ...args],
-      { cwd: tmpDir, encoding: "utf8" }
-    );
+    return spawnSync(process.execPath, [CLI_PATH, ...args], { cwd: tmpDir, encoding: "utf8" });
   }
 
   it("errors if no config exists", () => {
     const r = runCli(["status"]);
     expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(
-      /Error: config file ".swarm-sync.json" not found/
-    );
+    expect(r.stderr).toMatch(/Error: config file ".swarm-sync.json" not found/);
   });
 
   it("prints defaults when config exists but no state", () => {
     fs.writeJsonSync(path.join(tmpDir, ".swarm-sync.json"), { localDir: "foo" });
     const r = runCli(["status"]);
     expect(r.status).toBe(0);
-    const out = r.stdout.split("\n").map((l) => l.trim());
+    const out = r.stdout.split("\n").map(l => l.trim());
     expect(out).toContain("Swarm Drive Status");
     expect(out).toContain("localDir: foo");
     expect(out).toContain("active mode: manual");
-    expect(out).toContain(
-      "lastSync: <no sync yet> — run “swarm-drive sync” to perform first upload"
-    );
+    expect(out).toContain("lastSync: <no sync yet> — run “swarm-drive sync” to perform first upload");
   });
 
   it("reflects watch mode and prints only watchIntervalSeconds", () => {
@@ -68,17 +60,15 @@ describe("Swarm-CLI Integration Tests (status)", () => {
 
     const r = runCli(["status"]);
     expect(r.status).toBe(0);
-    const out = r.stdout.split("\n").map((l) => l.trim());
+    const out = r.stdout.split("\n").map(l => l.trim());
 
     expect(out).toContain("localDir: watched");
     expect(out).toContain("active mode: watch");
     expect(out).toContain("watchIntervalSeconds: 5");
     // scheduleIntervalSeconds was not set, so shouldn't appear:
-    expect(out.some((l) => l.startsWith("scheduleIntervalSeconds"))).toBe(false);
+    expect(out.some(l => l.startsWith("scheduleIntervalSeconds"))).toBe(false);
 
-    expect(out.find((l) => l.startsWith("lastSync:"))).toMatch(
-      new RegExp(`lastSync: ${now} \\(\\d+ minute`)
-    );
+    expect(out.find(l => l.startsWith("lastSync:"))).toMatch(new RegExp(`lastSync: ${now} \\(\\d+ minute`));
     expect(out).toContain("lastFiles: 1 files");
   });
 
@@ -96,14 +86,12 @@ describe("Swarm-CLI Integration Tests (status)", () => {
     });
     const r = runCli(["status"]);
     expect(r.status).toBe(0);
-    const out = r.stdout.split("\n").map((l) => l.trim());
+    const out = r.stdout.split("\n").map(l => l.trim());
     expect(out).toContain("localDir: bar");
     expect(out).toContain("active mode: schedule");
     expect(out).toContain("watchIntervalSeconds: 12");
     expect(out).toContain("scheduleIntervalSeconds: 34");
-    expect(out.find((l) => l.startsWith("lastSync:"))).toMatch(
-      new RegExp(`lastSync: ${now} \\(\\d+ minute`)
-    );
+    expect(out.find(l => l.startsWith("lastSync:"))).toMatch(new RegExp(`lastSync: ${now} \\(\\d+ minute`));
     expect(out).toContain("lastFiles: 3 files");
   });
 });

@@ -1,6 +1,6 @@
 import fs from "fs-extra";
-import path from "path";
 import os from "os";
+import path from "path";
 
 import { statusCmd } from "../../src/commands/status";
 import * as cfgMod from "../../src/utils/config";
@@ -28,12 +28,12 @@ describe("status command", () => {
   it("errors when config missing or invalid", async () => {
     (cfgMod.loadConfig as jest.Mock).mockRejectedValue(new Error("no config"));
     const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    const exitSpy = jest
-      .spyOn(process, "exit")
-      .mockImplementation((() => { throw new Error("exit"); }) as any);
+    const exitSpy = jest.spyOn(process, "exit").mockImplementation((() => {
+      throw new Error("exit");
+    }) as any);
     await expect(statusCmd()).rejects.toThrow("exit");
     expect(errSpy).toHaveBeenCalledWith(
-      'Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.'
+      'Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.',
     );
     exitSpy.mockRestore();
   });
@@ -49,9 +49,7 @@ describe("status command", () => {
     expect(logSpy).toHaveBeenCalledWith("------------------");
     expect(logSpy).toHaveBeenCalledWith("localDir: /data");
     expect(logSpy).toHaveBeenCalledWith("active mode: manual");
-    expect(logSpy).toHaveBeenCalledWith(
-      'lastSync: <no sync yet> — run “swarm-drive sync” to perform first upload'
-    );
+    expect(logSpy).toHaveBeenCalledWith("lastSync: <no sync yet> — run “swarm-drive sync” to perform first upload");
   });
 
   it("prints watch mode and intervals and last sync info", async () => {
@@ -73,9 +71,7 @@ describe("status command", () => {
     expect(logSpy).toHaveBeenCalledWith("active mode: watch");
     expect(logSpy).toHaveBeenCalledWith("watchIntervalSeconds: 15");
     expect(logSpy).toHaveBeenCalledWith("scheduleIntervalSeconds: 45");
-    expect(logSpy).toHaveBeenCalledWith(
-      `lastSync: ${lastSync} (2 minutes ago)`
-    );
+    expect(logSpy).toHaveBeenCalledWith(`lastSync: ${lastSync} (2 minutes ago)`);
     expect(logSpy).toHaveBeenCalledWith("lastFiles: 2 files");
   });
 

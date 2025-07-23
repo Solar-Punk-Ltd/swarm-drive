@@ -1,19 +1,19 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { BatchId, Bee, PrivateKey } from "@ethersphere/bee-js";
 import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
-import { Bee, PrivateKey, BatchId } from "@ethersphere/bee-js";
-import { buyStamp } from "../../src/utils/swarm";
 import { DEFAULT_BEE_URL } from "../../src/utils/constants";
+import { buyStamp } from "../../src/utils/swarm";
 
 jest.setTimeout(30000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL;
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
@@ -25,29 +25,19 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
 
   beforeAll(async () => {
     const FALLBACK_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    signerKey = (process.env.BEE_SIGNER_KEY?.startsWith("0x")
-      ? process.env.BEE_SIGNER_KEY!
-      : FALLBACK_KEY
-    );
+    signerKey = process.env.BEE_SIGNER_KEY?.startsWith("0x") ? process.env.BEE_SIGNER_KEY! : FALLBACK_KEY;
 
     if (!signerKey || !signerKey.startsWith("0x")) {
-      throw new Error(
-        "Please set BEE_SIGNER_KEY to a 0x‐prefixed key before running integration tests."
-      );
+      throw new Error("Please set BEE_SIGNER_KEY to a 0x‐prefixed key before running integration tests.");
     }
 
     bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
     ownerAddress = new PrivateKey(signerKey).publicKey().address().toString();
 
     const allBatches = await bee.getAllPostageBatch();
-    const existing = allBatches.find((b) => b.label === POSTAGE_LABEL);
+    const existing = allBatches.find(b => b.label === POSTAGE_LABEL);
     if (!existing) {
-      const newBatchId: BatchId = await buyStamp(
-        bee,
-        "10000000000000000000000",
-        18,
-        POSTAGE_LABEL
-      );
+      const newBatchId: BatchId = await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);
       postageBatchId = newBatchId.toString();
     } else {
       postageBatchId = existing.batchID.toString();
@@ -68,15 +58,11 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
   });
 
   function runCli(args: string[]): string {
-    const result = spawnSync(
-      process.execPath,
-      [CLI_PATH, ...args],
-      {
-        cwd: tmpDir,
-        env: { ...process.env, BEE_SIGNER_KEY: signerKey },
-        encoding: "utf-8",
-      }
-    );
+    const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+      cwd: tmpDir,
+      env: { ...process.env, BEE_SIGNER_KEY: signerKey },
+      encoding: "utf-8",
+    });
     if (result.status !== 0) {
       const stderr = (result.stderr ?? "").trim() || "<no stderr>";
       throw new Error(`"${args.join(" ")}" failed:\n${stderr}`);
@@ -98,9 +84,8 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
             return maybeHex;
           }
         }
-      } catch {
-      }
-      await new Promise((r) => setTimeout(r, 1000));
+      } catch {}
+      await new Promise(r => setTimeout(r, 1000));
     }
     throw new Error("Timed out waiting for a non-zero manifest in feed-get");
   }
@@ -109,15 +94,11 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     const folderName = "myFolder";
     fs.ensureDirSync(path.join(tmpDir, folderName));
 
-    const initResult = spawnSync(
-      process.execPath,
-      [CLI_PATH, "init", folderName],
-      {
-        cwd: tmpDir,
-        env: { ...process.env, BEE_SIGNER_KEY: signerKey },
-        encoding: "utf-8",
-      }
-    );
+    const initResult = spawnSync(process.execPath, [CLI_PATH, "init", folderName], {
+      cwd: tmpDir,
+      env: { ...process.env, BEE_SIGNER_KEY: signerKey },
+      encoding: "utf-8",
+    });
     expect(initResult.status).toBe(0);
 
     const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
@@ -138,7 +119,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.writeFile(path.join(localFolder, "hello.txt"), "Hello, Swarm!", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const manifestRef = await awaitLatestManifestViaCli();
     expect(manifestRef).toHaveLength(64);
@@ -157,7 +138,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.writeFile(fooPath, "version1", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const manifestV1 = await awaitLatestManifestViaCli();
     expect(manifestV1).toHaveLength(64);
@@ -165,7 +146,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.writeFile(fooPath, "version2", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const manifestV2 = await awaitLatestManifestViaCli();
     expect(manifestV2).toHaveLength(64);
@@ -184,7 +165,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.writeFile(path.join(folder2, "b.txt"), "B", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const manifestV1 = await awaitLatestManifestViaCli();
     expect(manifestV1).toHaveLength(64);
@@ -192,7 +173,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.remove(path.join(folder2, "b.txt"));
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const manifestV2 = await awaitLatestManifestViaCli();
     expect(manifestV2).toHaveLength(64);
@@ -211,7 +192,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await fs.writeFile(path.join(docsFolder, "x.md"), "X", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     const feedGet0 = runCli(["feed-get", "0"]);
     const parts0 = feedGet0.split(/\s+/);

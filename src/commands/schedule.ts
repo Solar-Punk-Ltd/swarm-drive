@@ -1,5 +1,6 @@
 import { loadConfig } from "../utils/config";
 import { loadState, saveState } from "../utils/state";
+
 import { syncCmd } from "./sync";
 
 export async function scheduleCmd(intervalSec: number): Promise<void> {
@@ -15,7 +16,7 @@ export async function scheduleCmd(intervalSec: number): Promise<void> {
   }
 
   loadState()
-    .then((state) => {
+    .then(state => {
       state.currentMode = "schedule";
       return saveState(state);
     })

@@ -1,14 +1,14 @@
 import fs from "fs-extra";
-import path from "path";
 import os from "os";
+import path from "path";
+
 import { syncCmd } from "../../src/commands/sync";
-import * as swarm from "../../src/utils/swarm";
 import { saveConfig } from "../../src/utils/config";
 import { loadState, saveState } from "../../src/utils/state";
+import * as swarm from "../../src/utils/swarm";
 
 jest.mock("../../src/utils/swarm");
-jest.spyOn(swarm, "downloadRemoteFile")
-    .mockResolvedValue(new Uint8Array());
+jest.spyOn(swarm, "downloadRemoteFile").mockResolvedValue(new Uint8Array());
 
 describe("sync command – latest remote-only implementation", () => {
   const tmp = path.join(os.tmpdir(), `swarm-drive-test-sync-${Date.now()}`);
@@ -74,7 +74,7 @@ describe("sync command – latest remote-only implementation", () => {
     expect(logSpy).toHaveBeenLastCalledWith("✅ [syncCmd] Nothing to sync.");
     logSpy.mockRestore();
 
-    expect((swarm.writeDriveFeed as jest.Mock).mock.calls.length).toBe(1);
+    expect((swarm.writeDriveFeed as jest.Mock).mock.calls).toHaveLength(1);
 
     const st = await loadState();
     expect(st.lastFiles).toEqual(["a.txt"]);
@@ -106,24 +106,21 @@ describe("sync command – latest remote-only implementation", () => {
       .mockResolvedValueOnce(Buffer.from("old"))
       .mockResolvedValueOnce(Buffer.from("old"));
 
-
     const REMOVED_REF = "c".repeat(64);
-    const NEW_REF     = "d".repeat(64);
-    (swarm.updateManifest as jest.Mock)
-      .mockResolvedValueOnce(REMOVED_REF)
-      .mockResolvedValueOnce(NEW_REF);
+    const NEW_REF = "d".repeat(64);
+    (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(REMOVED_REF).mockResolvedValueOnce(NEW_REF);
 
     await fs.writeFile(path.join(tmp, "b.txt"), "new");
     await syncCmd();
 
-    expect((swarm.updateManifest as jest.Mock).mock.calls.length).toBe(3);
+    expect((swarm.updateManifest as jest.Mock).mock.calls).toHaveLength(3);
 
     expect(swarm.writeDriveFeed).toHaveBeenLastCalledWith(
       dummyBee,
       expect.anything(),
       "batch1",
       NEW_REF,
-      expect.any(BigInt)
+      expect.any(BigInt),
     );
 
     const st = await loadState();

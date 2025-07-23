@@ -1,19 +1,18 @@
-import inquirer from 'inquirer'
-import fs from "fs/promises";
 import {
-  Bee,
-  PrivateKey,
-  PostageBatch,
   BatchId,
-  MantarayNode,
-  FeedIndex,
-  Topic,
-  Reference,
+  Bee,
   Bytes,
+  FeedIndex,
+  MantarayNode,
+  PostageBatch,
+  PrivateKey,
+  Reference,
+  Topic,
 } from "@ethersphere/bee-js";
-import { DEFAULT_BEE_URL, DRIVE_FEED_TOPIC, SWARM_DRIVE_STAMP_LABEL, SWARM_ZERO_ADDRESS } from "./constants";
-import { isNotFoundError } from "./helpers";
+import fs from "fs/promises";
+import inquirer from "inquirer";
 
+import { DEFAULT_BEE_URL, SWARM_DRIVE_STAMP_LABEL } from "./constants";
 
 export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
   const signerKey = privateKey ?? process.env.BEE_SIGNER_KEY;
@@ -21,7 +20,7 @@ export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
     throw new Error("🚨 BEE_SIGNER_KEY must be set in your environment");
   }
 
-  const beeApiUrl = process.env.BEE_API ?? DEFAULT_BEE_URL
+  const beeApiUrl = process.env.BEE_API ?? DEFAULT_BEE_URL;
   if (!beeApiUrl) {
     throw new Error("🚨 BEE_API must be set for your bee client");
   }
@@ -33,32 +32,32 @@ export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
 
 export async function createBeeWithBatch(
   apiUrl?: string,
-  signerKey?: string
+  signerKey?: string,
 ): Promise<{ bee: Bee; swarmDriveBatch: PostageBatch }> {
   const bee = makeBeeWithSigner(apiUrl, signerKey);
 
   let swarmDriveBatch = await getBatch(bee, undefined, SWARM_DRIVE_STAMP_LABEL);
 
   if (!swarmDriveBatch) {
-    console.log(`No "${SWARM_DRIVE_STAMP_LABEL}" stamp found.`)
+    console.log(`No "${SWARM_DRIVE_STAMP_LABEL}" stamp found.`);
     const { amount, depth, confirm } = await inquirer.prompt([
-      { name: 'confirm', type: 'confirm', message: 'Buy a new stamp now?' },
-      { name: 'amount',   type: 'input',   message: 'Amount (in BZZ):', default: '100000000000' },
-      { name: 'depth',    type: 'number',  message: 'Depth:',             default: 20 },
-    ])
+      { name: "confirm", type: "confirm", message: "Buy a new stamp now?" },
+      { name: "amount", type: "input", message: "Amount (in BZZ):", default: "100000000000" },
+      { name: "depth", type: "number", message: "Depth:", default: 20 },
+    ]);
     if (!confirm) {
-      throw new Error('Cannot proceed without a postage stamp')
+      throw new Error("Cannot proceed without a postage stamp");
     }
-    const batchID = await buyStamp(bee, amount, depth, SWARM_DRIVE_STAMP_LABEL)
+    const batchID = await buyStamp(bee, amount, depth, SWARM_DRIVE_STAMP_LABEL);
     const batch = await getBatch(bee, batchID);
     if (!batch) {
-      throw new Error('Swarm Drive batch could not be created')
+      throw new Error("Swarm Drive batch could not be created");
     }
 
     swarmDriveBatch = batch;
   }
 
-  return { bee, swarmDriveBatch }
+  return { bee, swarmDriveBatch };
 }
 
 export async function getBatch(
@@ -72,17 +71,17 @@ export async function getBatch(
 
   const batches = await bee.getPostageBatches();
   if (batchId) {
-    return batches.find((b) => b.batchID.equals(batchId) && b.usable);
+    return batches.find(b => b.batchID.equals(batchId) && b.usable);
   }
 
-  return batches.find((b) => b.label === label && b.usable);
+  return batches.find(b => b.label === label && b.usable);
 }
 
 export async function buyStamp(
   bee: Bee,
   amount: string | bigint,
   depth: number,
-  label = SWARM_DRIVE_STAMP_LABEL
+  label = SWARM_DRIVE_STAMP_LABEL,
 ): Promise<BatchId> {
   return await bee.createPostageBatch(amount, depth, {
     label,
@@ -96,7 +95,7 @@ export async function addRemoveFork(
   manifestRef: string | undefined,
   localPath: string,
   prefix: string,
-  remove = false
+  remove = false,
 ): Promise<string> {
   let node: MantarayNode;
 
@@ -132,17 +131,10 @@ export async function updateManifest(
   manifestRef: string | undefined,
   localPath: string,
   prefix: string,
-  remove = false
+  remove = false,
 ): Promise<string> {
   try {
-    return await addRemoveFork(
-      bee,
-      batchId,
-      manifestRef,
-      localPath,
-      prefix,
-      remove,
-    )
+    return await addRemoveFork(bee, batchId, manifestRef, localPath, prefix, remove);
   } catch (err: any) {
     if (err.message.includes("Invalid array length")) {
       const batch = await getBatch(bee, batchId);
@@ -150,19 +142,15 @@ export async function updateManifest(
       console.log("Stamp utilization: ", batch?.utilization);
 
       throw new Error(
-        `Stamp capacity low: cannot update manifest with "${prefix}". ` +
-        `You'll need a larger batch for this file.`
-      )
+        `Stamp capacity low: cannot update manifest with "${prefix}". ` + `You'll need a larger batch for this file.`,
+      );
     }
 
-    throw err
+    throw err;
   }
 }
 
-export async function listRemoteFilesMap(
-  bee: Bee,
-  manifestRef: string
-): Promise<Record<string, string>> {
+export async function listRemoteFilesMap(bee: Bee, manifestRef: string): Promise<Record<string, string>> {
   const node = await loadMantarayNode(bee, manifestRef);
 
   const nodesMap = node.collectAndMap();
@@ -174,11 +162,7 @@ export async function listRemoteFilesMap(
   return out;
 }
 
-export async function downloadRemoteFile(
-  bee: Bee,
-  manifestRef: string,
-  prefix: string
-): Promise<Uint8Array> {
+export async function downloadRemoteFile(bee: Bee, manifestRef: string, prefix: string): Promise<Uint8Array> {
   const node = await loadMantarayNode(bee, manifestRef);
 
   const leaf = node.find(prefix);
@@ -193,17 +177,14 @@ export async function downloadRemoteFile(
 
 async function loadMantarayNode(bee: Bee, ref: string | Reference): Promise<MantarayNode> {
   let node: MantarayNode;
-    try {
-      node = await MantarayNode.unmarshal(
-        bee,
-        new Reference(ref)
-      );
-      await node.loadRecursively(bee);
-    } catch (err: any) {
-      throw new Error(`Failed to load mantaray node: ${err}`);
-    }
+  try {
+    node = await MantarayNode.unmarshal(bee, new Reference(ref));
+    await node.loadRecursively(bee);
+  } catch (err: any) {
+    throw new Error(`Failed to load mantaray node: ${err}`);
+  }
 
-    return node;
+  return node;
 }
 
 export async function readDriveFeed(
@@ -211,10 +192,10 @@ export async function readDriveFeed(
   identifier: string | Uint8Array,
   address: string,
   index?: FeedIndex,
-): Promise<{ref: Bytes, index: bigint}> {
+): Promise<{ ref: Bytes; index: bigint }> {
   const feedReader = bee.makeFeedReader(identifier, address);
   const feedUpdate = await feedReader.downloadReference(index ? { index } : undefined);
-  return {ref: feedUpdate.reference, index: feedUpdate.feedIndex.toBigInt()};
+  return { ref: feedUpdate.reference, index: feedUpdate.feedIndex.toBigInt() };
 }
 
 export async function writeDriveFeed(
@@ -222,9 +203,12 @@ export async function writeDriveFeed(
   topic: Topic,
   batchId: BatchId,
   manifestRef: string,
-  index?: bigint
+  index?: bigint,
 ): Promise<void> {
   const writer = bee.makeFeedWriter(topic.toUint8Array(), bee.signer!);
-  await writer.uploadReference(batchId, new Reference(manifestRef),  index === undefined ? undefined : { index: FeedIndex.fromBigInt(index) });
+  await writer.uploadReference(
+    batchId,
+    new Reference(manifestRef),
+    index === undefined ? undefined : { index: FeedIndex.fromBigInt(index) },
+  );
 }
-

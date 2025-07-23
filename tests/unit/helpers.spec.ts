@@ -19,8 +19,8 @@ jest.mock("@ethersphere/bee-js", () => {
         const otherBuf = Buffer.isBuffer(other)
           ? other
           : other instanceof (this.constructor as any)
-          ? (other as any).buf
-          : null;
+            ? (other as any).buf
+            : null;
         return Buffer.isBuffer(otherBuf) && this.buf.equals(otherBuf);
       }
       toString() {
@@ -34,9 +34,10 @@ jest.mock("@ethersphere/bee-js", () => {
   };
 });
 
-import { feedGet, manifestLs, listStamps } from "../../src/utils/swarm";
-import * as swarmUtils from "../../src/utils/swarm";
 import { Bee } from "@ethersphere/bee-js";
+
+import { feedGet, listStamps, manifestLs } from "../../src/utils/swarm";
+import * as swarmUtils from "../../src/utils/swarm";
 jest.mock("../../src/utils/swarm");
 
 describe("helpers.ts", () => {
@@ -49,11 +50,9 @@ describe("helpers.ts", () => {
     originalEnv = { ...process.env };
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    exitSpy = jest
-      .spyOn(process, "exit")
-      .mockImplementation((code?: number) => {
-        throw new Error(`Process exited with code: ${code}`);
-      });
+    exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: number) => {
+      throw new Error(`Process exited with code: ${code}`);
+    });
   });
 
   afterAll(() => {
@@ -76,12 +75,12 @@ describe("helpers.ts", () => {
   describe("feedGet(indexArg)", () => {
     const dummySignerKey = "0x" + "1".repeat(64);
 
-  beforeEach(() => {
-    process.env.BEE_SIGNER_KEY = dummySignerKey;
-    (swarmUtils.readDriveFeed as jest.Mock).mockReset();
-    (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
-    (swarmUtils.makeBeeWithSigner as jest.Mock).mockReset();
-  });
+    beforeEach(() => {
+      process.env.BEE_SIGNER_KEY = dummySignerKey;
+      (swarmUtils.readDriveFeed as jest.Mock).mockReset();
+      (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReset();
+    });
 
     it("prints hex when payload is exactly 32 bytes (non-zero)", async () => {
       const fakePayload = Buffer.from("a".repeat(64), "hex");
@@ -100,9 +99,7 @@ describe("helpers.ts", () => {
       (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
 
       await expect(feedGet(5)).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/^Feed@5 → [0-9a-f]{64}$/)
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/^Feed@5 → [0-9a-f]{64}$/));
     });
 
     it("prints zero-address when payload is 32 bytes of zero", async () => {
@@ -142,9 +139,7 @@ describe("helpers.ts", () => {
       (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
 
       await expect(feedGet(2)).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        "Feed@2 → payload length 5, not a 32-byte reference."
-      );
+      expect(logSpy).toHaveBeenCalledWith("Feed@2 → payload length 5, not a 32-byte reference.");
     });
 
     it("calls process.exit(1) on download error", async () => {
@@ -161,10 +156,7 @@ describe("helpers.ts", () => {
       (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
 
       await expect(feedGet(1)).rejects.toThrow("Process exited with code: 1");
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to read feed@1:",
-        "download failed"
-      );
+      expect(errSpy).toHaveBeenCalledWith("Failed to read feed@1:", "download failed");
     });
 
     it("prints latest when no indexArg and readDriveFeed returns ref", async () => {
@@ -190,9 +182,7 @@ describe("helpers.ts", () => {
 
       (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(undefined);
       await expect(feedGet()).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        "Feed@latest → zero address (empty) or no feed entry yet"
-      );
+      expect(logSpy).toHaveBeenCalledWith("Feed@latest → zero address (empty) or no feed entry yet");
     });
 
     it("exits on readDriveFeed error", async () => {
@@ -203,14 +193,9 @@ describe("helpers.ts", () => {
       } as any as Bee;
       (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
 
-      (swarmUtils.readDriveFeed as jest.Mock).mockRejectedValue(
-        new Error("oops")
-      );
+      (swarmUtils.readDriveFeed as jest.Mock).mockRejectedValue(new Error("oops"));
       await expect(feedGet()).rejects.toThrow("Process exited with code: 1");
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to read feed@latest:",
-        "oops"
-      );
+      expect(errSpy).toHaveBeenCalledWith("Failed to read feed@latest:", "oops");
     });
   });
 
@@ -246,17 +231,10 @@ describe("helpers.ts", () => {
     it("exits on listRemoteFilesMap error", async () => {
       const fakeBee = {} as Bee;
       (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
-      (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(
-        new Error("fail")
-      );
+      (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(new Error("fail"));
 
-      await expect(manifestLs("badRef")).rejects.toThrow(
-        "Process exited with code: 1"
-      );
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to list manifest badRef:",
-        "fail"
-      );
+      await expect(manifestLs("badRef")).rejects.toThrow("Process exited with code: 1");
+      expect(errSpy).toHaveBeenCalledWith("Failed to list manifest badRef:", "fail");
     });
   });
 

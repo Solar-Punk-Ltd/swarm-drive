@@ -1,8 +1,10 @@
-import path from "path"
 import chokidar from "chokidar";
 import debounce from "lodash.debounce";
+import path from "path";
+
 import { loadConfig } from "../utils/config";
 import { loadState, saveState } from "../utils/state";
+
 import { syncCmd } from "./sync";
 
 export async function watchCmd(debounceSec?: number) {
@@ -12,8 +14,8 @@ export async function watchCmd(debounceSec?: number) {
     debounceSec !== undefined
       ? debounceSec * 1000
       : watchIntervalSeconds !== undefined
-      ? watchIntervalSeconds * 1000
-      : 300;
+        ? watchIntervalSeconds * 1000
+        : 300;
 
   console.log(`Watching ${localDir} for changes (debounce: ${ms}ms)…`);
   console.log("Initial sync on watch start…");
@@ -27,8 +29,8 @@ export async function watchCmd(debounceSec?: number) {
     ignoreInitial: true,
     depth: Infinity,
     ignored: (filePath: string) => {
-      const name = path.basename(filePath)
-      return name === ".swarm-sync.json" || name === ".swarm-sync-state.json"
+      const name = path.basename(filePath);
+      return name === ".swarm-sync.json" || name === ".swarm-sync-state.json";
     },
   });
 
@@ -46,8 +48,8 @@ export async function watchCmd(debounceSec?: number) {
   }, ms);
 
   watcher
-    .on("add",    debouncedSync)
+    .on("add", debouncedSync)
     .on("change", debouncedSync)
     .on("unlink", debouncedSync)
-    .on("error", (err) => console.error("Watcher error:", err));
+    .on("error", err => console.error("Watcher error:", err));
 }

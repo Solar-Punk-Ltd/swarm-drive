@@ -28,11 +28,7 @@ describe("Swarm-CLI Integration Tests (config)", () => {
   });
 
   function runCli(args: string[]) {
-    return spawnSync(
-      process.execPath,
-      [CLI_PATH, ...args],
-      { cwd: tmpDir, encoding: "utf8" }
-    );
+    return spawnSync(process.execPath, [CLI_PATH, ...args], { cwd: tmpDir, encoding: "utf8" });
   }
 
   it("set and get localDir", () => {

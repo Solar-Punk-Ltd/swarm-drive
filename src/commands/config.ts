@@ -1,5 +1,5 @@
-import { loadConfig, saveConfig } from "../utils/config";
 import type { Config } from "../types";
+import { loadConfig, saveConfig } from "../utils/config";
 
 export async function configSetCmd(key: string, value: string): Promise<void> {
   const cfg = (await loadConfig()) as Config & { lastSync?: string };
