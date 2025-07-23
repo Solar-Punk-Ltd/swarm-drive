@@ -1,6 +1,6 @@
 {
   "name": "swarm-drive",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "bin": {
     "swarm-drive": "bin/swarm-drive.js"
   },
@@ -13,7 +13,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
-    "@ethersphere/bee-js": "^9.1.0",
+    "@ethersphere/bee-js": "^9.6.0",
     "chokidar": "^4.0.3",
     "dotenv": "^16.5.0",
     "fast-glob": "^3.2.7",

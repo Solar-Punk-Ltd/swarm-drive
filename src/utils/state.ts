@@ -1,5 +1,6 @@
 import fs from "fs/promises"
-import path from "path"
+
+import { STATE_PATH } from "./constants";
 
 export interface State {
   lastFiles?: string[]
@@ -8,8 +9,6 @@ export interface State {
   lastSync?: string
   currentMode?: "watch" | "schedule"
 }
-
-const STATE_PATH = path.resolve(process.cwd(), ".swarm-sync-state.json")
 
 export async function loadState(): Promise<State> {
   try {

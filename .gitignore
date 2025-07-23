@@ -2,6 +2,7 @@
 .swarm-sync.json
 .env
 .ENV
+.vscode/
 dist/
 data/
 node_modules/

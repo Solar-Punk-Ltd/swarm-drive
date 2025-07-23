@@ -7,14 +7,14 @@ import path from "path";
 import { spawn, spawnSync, ChildProcess } from "child_process";
 
 import { Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
-import { buyStamp } from "./helpers";
+import { buyStamp } from "../../src/utils/swarm";
 
-import { DRIVE_FEED_TOPIC } from "../../src/utils/constants";
+import { DEFAULT_BEE_URL, DRIVE_FEED_TOPIC } from "../../src/utils/constants";
 
 jest.setTimeout(45_000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Test: schedule", () => {

@@ -34,7 +34,7 @@ jest.mock("@ethersphere/bee-js", () => {
   };
 });
 
-import { feedGet, feedLs, manifestLs, listStamps } from "../../src/commands/helpers";
+import { feedGet, manifestLs, listStamps } from "../../src/utils/swarm";
 import * as swarmUtils from "../../src/utils/swarm";
 import { Bee } from "@ethersphere/bee-js";
 jest.mock("../../src/utils/swarm");
@@ -61,7 +61,7 @@ describe("helpers.ts", () => {
     jest.restoreAllMocks();
   });
 
-  describe("makeBareBeeClient (indirectly via feedGet)", () => {
+  describe("makeBeeWithSigner (indirectly via feedGet)", () => {
     it("throws if BEE_SIGNER_KEY is missing", async () => {
       delete process.env.BEE_SIGNER_KEY;
       await expect(feedGet()).rejects.toThrow(/must be set/);
@@ -80,7 +80,7 @@ describe("helpers.ts", () => {
     process.env.BEE_SIGNER_KEY = dummySignerKey;
     (swarmUtils.readDriveFeed as jest.Mock).mockReset();
     (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
-    (swarmUtils.makeBareBeeClient as jest.Mock).mockReset();
+    (swarmUtils.makeBeeWithSigner as jest.Mock).mockReset();
   });
 
     it("prints hex when payload is exactly 32 bytes (non-zero)", async () => {
@@ -214,16 +214,6 @@ describe("helpers.ts", () => {
     });
   });
 
-  describe("feedLs()", () => {
-    it("just calls feedGet()", async () => {
-      // we spy on feedGet, since feedLs should delegate to it
-      const helper = require("../../src/commands/helpers");
-      const spy = jest.spyOn(helper, "feedGet").mockResolvedValue(undefined);
-      // call via the module so our spy is applied
-      await helper.feedLs();
-      expect(spy).toHaveBeenCalledWith(undefined);
-    });
-  });
   describe("manifestLs()", () => {
     beforeEach(() => {
       process.env.BEE_SIGNER_KEY = "0x" + "2".repeat(64);
@@ -232,7 +222,7 @@ describe("helpers.ts", () => {
 
     it("prints empty when remote manifest has no files", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({});
 
       await expect(manifestLs("someRef")).resolves.toBeUndefined();
@@ -241,7 +231,7 @@ describe("helpers.ts", () => {
 
     it("prints list of files when remote manifest has entries", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({
         "a.txt": "refA",
         "b.txt": "refB",
@@ -255,7 +245,7 @@ describe("helpers.ts", () => {
 
     it("exits on listRemoteFilesMap error", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(
         new Error("fail")
       );
@@ -273,7 +263,7 @@ describe("helpers.ts", () => {
   describe("listStamps()", () => {
     it("prints no stamps if none exist", async () => {
       const fakeBee = { getAllPostageBatch: jest.fn().mockResolvedValue([]) } as any;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
 
       await expect(listStamps()).resolves.toBeUndefined();
       expect(logSpy).toHaveBeenCalledWith("No postage batches found on this node.");
@@ -289,7 +279,7 @@ describe("helpers.ts", () => {
       const fakeBee = {
         getAllPostageBatch: jest.fn().mockResolvedValue([fakeBatch]),
       } as any as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
 
       await expect(listStamps()).resolves.toBeUndefined();
       expect(logSpy).toHaveBeenCalledWith("🗃️  Postage batches:");

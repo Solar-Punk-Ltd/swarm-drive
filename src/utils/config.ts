@@ -1,8 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
 import { Config } from "../types";
-
- const CONFIG_FILE = ".swarm-sync.json";
+import { CONFIG_FILE } from "./constants";
 
  const DEFAULT_CONFIG: Config & { lastSync?: string } = {
    localDir: "",

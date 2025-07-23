@@ -7,15 +7,15 @@ import os from "os";
 import path from "path";
 import { spawnSync, spawn, ChildProcess } from "child_process";
 import { Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
-import { buyStamp } from "./helpers";
+import { buyStamp } from "../../src/utils/swarm";
 
 // ── Import the very same 32-byte feed topic that the CLI uses ──
-import { DRIVE_FEED_TOPIC } from "../../src/utils/constants";
+import { DEFAULT_BEE_URL, DRIVE_FEED_TOPIC } from "../../src/utils/constants";
 
 jest.setTimeout(45_000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Test: watch", () => {
@@ -62,8 +62,8 @@ describe("Swarm-CLI Integration Test: watch", () => {
     await fs.remove(tmpDir);
   });
 
-  /** 
-   * Helper: run `swarm-cli <...args>` synchronously; throw on non-zero exit. 
+  /**
+   * Helper: run `swarm-cli <...args>` synchronously; throw on non-zero exit.
    * Always inject BEE_SIGNER_KEY so CLI can use it.
    */
   function runCli(args: string[]): string {

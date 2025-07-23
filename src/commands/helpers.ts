@@ -1,6 +1,7 @@
 import { Bee, PrivateKey, FeedIndex } from "@ethersphere/bee-js"
 import * as swarmUtils from "../utils/swarm"
 import { DRIVE_FEED_TOPIC } from "../utils/constants"
+import { isNotFoundError } from "../utils/helpers"
 
 const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
 
@@ -18,50 +19,25 @@ async function makeBeeWithoutStamp(): Promise<Bee> {
 }
 
 export async function feedGet(indexArg?: number): Promise<void> {
-  const bee = await makeBeeWithoutStamp()
+  const bee = swarmUtils.makeBeeWithSigner()
   const owner = bee.signer!.publicKey().address().toString()
 
-  if (typeof indexArg !== "number") {
-    try {
-      const ref = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC, owner)
-      if (ref) {
-        console.log(`Feed@latest → ${ref}`)
-      } else {
-        console.log(
-          "Feed@latest → zero address (empty) or no feed entry yet"
-        )
-      }
-    } catch (err: any) {
-      console.error("Failed to read feed@latest:", err.message || err)
-      throw new Error("Process exited with code: 1")
-    }
-    return
+  let index: FeedIndex | undefined = undefined;
+  if (typeof indexArg === "number" && indexArg >= 0) {
+    index = FeedIndex.fromBigInt(BigInt(indexArg));
   }
+  const slotStr = index ? index.toBigInt() : 'latest';
 
-  const slot = BigInt(indexArg)
-  const reader = bee.makeFeedReader(
-    DRIVE_FEED_TOPIC.toUint8Array(),
-    owner
-  )
   try {
-    const msg = await reader.download({
-      index: FeedIndex.fromBigInt(slot),
-    })
-    const raw = msg.payload.toUint8Array()
-    if (raw.byteLength === 32) {
-      const hex = Buffer.from(raw).toString("hex")
-      if (/^0+$/.test(hex)) {
-        console.log(`Feed@${slot} → zero address (empty)`)
-      } else {
-        console.log(`Feed@${slot} → ${hex}`)
-      }
-    } else {
-      console.log(
-        `Feed@${slot} → payload length ${raw.byteLength}, not a 32-byte reference.`
-      )
-    }
+    const { ref } = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner)
+    console.log(`Feed@${slotStr} → ${ref}`)
   } catch (err: any) {
-    console.error(`Failed to read feed@${slot}:`, err.message || err)
+    if (isNotFoundError(err)) {
+      console.log(`Feed@${slotStr} → no feed entry yet`);
+      return;
+    }
+
+    console.error(`Failed to read feed@${slotStr}:`, err.message || err)
     throw new Error("Process exited with code: 1")
   }
 }
@@ -72,7 +48,8 @@ export async function feedLs(indexArg?: number): Promise<void> {
 }
 
 export async function manifestLs(manifestRef: string): Promise<void> {
-  const bee = swarmUtils.makeBareBeeClient()
+  const bee = swarmUtils.makeBeeWithSigner()
+
   try {
     const map = await swarmUtils.listRemoteFilesMap(bee, manifestRef)
     const files = Object.keys(map)
@@ -91,12 +68,13 @@ export async function manifestLs(manifestRef: string): Promise<void> {
 }
 
 export async function listStamps(): Promise<void> {
-  const bee = swarmUtils.makeBareBeeClient()
-  const all = await bee.getAllPostageBatch()
+  const bee = swarmUtils.makeBeeWithSigner()
+  const all = await bee.getPostageBatches()
   if (all.length === 0) {
     console.log("No postage batches found on this node.")
     return
   }
+
   console.log("🗃️  Postage batches:")
   for (const b of all) {
     console.log(`  • BatchID: ${b.batchID.toString()}`)

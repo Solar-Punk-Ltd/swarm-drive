@@ -4,11 +4,12 @@ import path from "path";
 import os from "os";
 import { initCmd } from "../../src/commands/init";
 import { loadConfig } from "../../src/utils/config";
-import { createBeeClient } from "../../src/utils/swarm";
+import { createBeeWithBatch } from "../../src/utils/swarm";
+import { DEFAULT_BEE_URL } from "../../src/utils/constants";
 
 jest.mock("../../src/utils/swarm");
 
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
 
 describe("init command", () => {
   const tmp = path.join(os.tmpdir(), `swarm-drive-test-${Date.now()}`);
@@ -21,7 +22,7 @@ describe("init command", () => {
     await fs.ensureDir(tmp);
     process.chdir(tmp);
 
-    // provide a valid signer key for createBeeClient
+    // provide a valid signer key for createBeeWithBatch
     process.env.BEE_SIGNER_KEY = "0x" + "1".repeat(64);
   });
 
@@ -33,7 +34,7 @@ describe("init command", () => {
   beforeEach(() => {
     consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    (createBeeClient as jest.Mock).mockReset();
+    (createBeeWithBatch as jest.Mock).mockReset();
   });
 
   afterEach(() => {
@@ -45,9 +46,9 @@ describe("init command", () => {
     const localDir = "my-folder";
     await fs.ensureDir(path.join(tmp, localDir));
 
-    // stub createBeeClient to return a fake batch
+    // stub createBeeWithBatch to return a fake batch
     const fakeBatch = { batchID: { toString: () => "batch-123" } };
-    (createBeeClient as jest.Mock).mockResolvedValue({
+    (createBeeWithBatch as jest.Mock).mockResolvedValue({
       bee: {} as any,
       swarmDriveBatch: fakeBatch,
     });
@@ -66,7 +67,7 @@ describe("init command", () => {
     expect(state).toEqual({});
 
     // 3) stamp initialization calls
-    expect(createBeeClient).toHaveBeenCalledWith(
+    expect(createBeeWithBatch).toHaveBeenCalledWith(
       BEE_API,
       process.env.BEE_SIGNER_KEY
     );

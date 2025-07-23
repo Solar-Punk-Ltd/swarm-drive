@@ -30,7 +30,7 @@ describe("sync command – latest remote-only implementation", () => {
     await saveConfig({ localDir: tmp });
     await saveState({ lastSync: "", lastFiles: [] });
 
-    (swarm.createBeeClient as jest.Mock).mockResolvedValue({
+    (swarm.createBeeWithBatch as jest.Mock).mockResolvedValue({
       bee: dummyBee,
       swarmDriveBatch: {
         batchID: "batch1",
@@ -61,7 +61,7 @@ describe("sync command – latest remote-only implementation", () => {
   it("no-ops when nothing changed", async () => {
     await fs.writeFile(path.join(tmp, "a.txt"), "foo");
     (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
-    (swarm.safeUpdateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
+    (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
 
     await syncCmd();
 
@@ -97,7 +97,7 @@ describe("sync command – latest remote-only implementation", () => {
   it("uploads a modified local file", async () => {
     await fs.writeFile(path.join(tmp, "b.txt"), "old");
     (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
-    (swarm.safeUpdateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
+    (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
     await syncCmd();
 
     (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
@@ -105,18 +105,18 @@ describe("sync command – latest remote-only implementation", () => {
     (swarm.downloadRemoteFile as jest.Mock)
       .mockResolvedValueOnce(Buffer.from("old"))
       .mockResolvedValueOnce(Buffer.from("old"));
-    
+
 
     const REMOVED_REF = "c".repeat(64);
     const NEW_REF     = "d".repeat(64);
-    (swarm.safeUpdateManifest as jest.Mock)
+    (swarm.updateManifest as jest.Mock)
       .mockResolvedValueOnce(REMOVED_REF)
       .mockResolvedValueOnce(NEW_REF);
 
     await fs.writeFile(path.join(tmp, "b.txt"), "new");
     await syncCmd();
 
-    expect((swarm.safeUpdateManifest as jest.Mock).mock.calls.length).toBe(3);
+    expect((swarm.updateManifest as jest.Mock).mock.calls.length).toBe(3);
 
     expect(swarm.writeDriveFeed).toHaveBeenLastCalledWith(
       dummyBee,

@@ -13,7 +13,6 @@ import { configSetCmd, configGetCmd } from "./commands/config";
 import {
   listStamps,
   feedGet,
-  feedLs,
   manifestLs,
 } from "./commands/helpers"
 
@@ -69,7 +68,7 @@ yargs(hideBin(process.argv))
   .command({
     command: "feed-ls",
     describe: "Alias for feed-get latest",
-    handler: () => feedLs(),
+    handler: () => feedGet(),
   })
   .command({
     command: "manifest-ls <manifestRef>",

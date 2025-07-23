@@ -7,18 +7,16 @@ import {
   Reference as BeeReference,
 } from "@ethersphere/bee-js"
 import {
-  createBeeClient,
+  createBeeWithBatch,
   downloadRemoteFile,
   listRemoteFilesMap,
-  safeUpdateManifest,
+  updateManifest,
   writeDriveFeed,
-  readFeedIndex,
+  readDriveFeed,
 } from "../utils/swarm"
 import { loadConfig } from "../utils/config"
 import { loadState, saveState } from "../utils/state"
 import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants"
-
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
 
 export async function syncCmd() {
   console.log("[syncCmd] Starting sync…")
@@ -32,10 +30,7 @@ export async function syncCmd() {
 
   console.log("[syncCmd] Loaded state:", state)
 
-  const { bee, swarmDriveBatch } = await createBeeClient(
-    BEE_API,
-    process.env.BEE_SIGNER_KEY!
-  )
+  const { bee, swarmDriveBatch } = await createBeeWithBatch()
   const batchID = swarmDriveBatch.batchID
   const owner = bee.signer!.publicKey().address().toString()
   const rawRemaining = swarmDriveBatch.remainingSize?.toBytes() ?? 0
@@ -43,7 +38,7 @@ export async function syncCmd() {
 
   console.log("[syncCmd] Bee ready → owner:", owner)
   console.log(`[syncCmd] Stamp remaining bytes → ${rawRemaining} bytes`)
-  const lastIndex = await readFeedIndex(bee, DRIVE_FEED_TOPIC, owner)
+  const { index: lastIndex } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner)
 
   console.log("[syncCmd] feed@latest index →", lastIndex)
 
@@ -73,7 +68,7 @@ export async function syncCmd() {
   if (state.skipFiles) {
     state.skipFiles = state.skipFiles.filter((f) => localFiles.includes(f));
   }
-  
+
   let remoteMap: Record<string, string> = {}
   if (oldManifest) {
     try {
@@ -214,7 +209,7 @@ export async function syncCmd() {
   for (const f of toAdd) {
     console.log("➕ Add →", f)
     try {
-      newManifest = await safeUpdateManifest(
+      newManifest = await updateManifest(
         bee,
         batchID,
         newManifest,
@@ -233,8 +228,8 @@ export async function syncCmd() {
   for (const f of toUpload) {
     console.log("⬆️  Upload →", f)
     try {
-      newManifest = await safeUpdateManifest(bee, batchID, newManifest, "", f, true)
-      newManifest = await safeUpdateManifest(
+      newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
+      newManifest = await updateManifest(
         bee,
         batchID,
         newManifest,
@@ -251,7 +246,7 @@ export async function syncCmd() {
 
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete →", f)
-    newManifest = await safeUpdateManifest(bee, batchID, newManifest, "", f, true)
+    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true)
   }
 
   const realAdds = toAdd.filter(f => !toDeleteLocal.includes(f))

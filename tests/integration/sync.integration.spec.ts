@@ -7,12 +7,13 @@ import os from "os";
 import path from "path";
 
 import { Bee, PrivateKey, BatchId } from "@ethersphere/bee-js";
-import { buyStamp } from "./helpers";
+import { buyStamp } from "../../src/utils/swarm";
+import { DEFAULT_BEE_URL } from "../../src/utils/constants";
 
 jest.setTimeout(30000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
@@ -28,7 +29,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
       ? process.env.BEE_SIGNER_KEY!
       : FALLBACK_KEY
     );
-    
+
     if (!signerKey || !signerKey.startsWith("0x")) {
       throw new Error(
         "Please set BEE_SIGNER_KEY to a 0x‐prefixed key before running integration tests."
@@ -150,52 +151,52 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     const dataDir = "data";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
-  
+
     const folder1 = path.join(tmpDir, dataDir);
     const fooPath = path.join(folder1, "foo.txt");
     await fs.writeFile(fooPath, "version1", "utf-8");
     runCli(["sync"]);
-  
+
     await new Promise((r) => setTimeout(r, 1000));
-  
+
     const manifestV1 = await awaitLatestManifestViaCli();
     expect(manifestV1).toHaveLength(64);
-  
+
     await fs.writeFile(fooPath, "version2", "utf-8");
     runCli(["sync"]);
-  
+
     await new Promise((r) => setTimeout(r, 1000));
-  
+
     const manifestV2 = await awaitLatestManifestViaCli();
     expect(manifestV2).toHaveLength(64);
 
     const ls2 = runCli(["manifest-ls", manifestV2]);
     expect(ls2).toMatch(/hello\.txt/);
   });
-  
+
   it("sync after deleting a file removes it from the remote manifest", async () => {
     const dataDir = "files";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
-  
+
     const folder2 = path.join(tmpDir, dataDir);
     await fs.writeFile(path.join(folder2, "a.txt"), "A", "utf-8");
     await fs.writeFile(path.join(folder2, "b.txt"), "B", "utf-8");
     runCli(["sync"]);
-  
+
     await new Promise((r) => setTimeout(r, 1000));
-  
+
     const manifestV1 = await awaitLatestManifestViaCli();
     expect(manifestV1).toHaveLength(64);
-  
+
     await fs.remove(path.join(folder2, "b.txt"));
     runCli(["sync"]);
-  
+
     await new Promise((r) => setTimeout(r, 1000));
-  
+
     const manifestV2 = await awaitLatestManifestViaCli();
     expect(manifestV2).toHaveLength(64);
-  
+
     const lsResult = runCli(["manifest-ls", manifestV2]);
     expect(lsResult).toMatch(/hello\.txt/);
     expect(lsResult).not.toMatch(/b\.txt/);

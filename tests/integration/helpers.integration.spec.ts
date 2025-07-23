@@ -8,12 +8,13 @@ import os from "os";
 import path from "path";
 
 import { Bee, PrivateKey } from "@ethersphere/bee-js";
-import { buyStamp } from "./helpers";
+import { buyStamp } from "../../src/utils/swarm";
+import { DEFAULT_BEE_URL } from "../../src/utils/constants";
 
 jest.setTimeout(30000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
+const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL
 const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)", () => {
