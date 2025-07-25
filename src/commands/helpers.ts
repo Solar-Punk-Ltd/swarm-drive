@@ -21,13 +21,13 @@ export async function feedGet(indexArg?: number): Promise<void> {
   }
   const slotStr = index !== undefined ? index.toBigInt() : "latest";
 
-  const { payload, feedIndex } = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner, index);
+  const { reference, feedIndex } = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner, index);
   if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
     console.log(`Feed@${slotStr} → no feed entry yet`);
     return;
   }
 
-  console.log(`Feed@${slotStr} → ${payload.toString()}`);
+  console.log(`Feed@${slotStr} → ${reference.toString()}`);
 }
 
 export async function manifestLs(manifestRef: string): Promise<void> {

@@ -4,7 +4,7 @@ import path from "path";
 export default async function globalTeardown(): Promise<void> {
   console.log("Stopping Bee Nodes...");
   const scriptPath = path.resolve(__dirname, "stopBeeNode.sh");
-
+  // TODO: remove log, pid files
   try {
     execSync(`chmod +x ${scriptPath}`);
     execSync(scriptPath, { stdio: "inherit" });

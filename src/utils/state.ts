@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 
-import { State } from "../utils/types";
+import { State, StateMode } from "../utils/types";
 
 import { STATE_PATH } from "./constants";
 
@@ -9,7 +9,10 @@ export async function loadState(): Promise<State> {
     const raw = await fs.readFile(STATE_PATH, "utf-8");
     return JSON.parse(raw) as State;
   } catch (err: any) {
-    throw new Error(`Failed to load state from "${STATE_PATH}": ${err.message}`);
+    console.warn(`Failed to load state from "${STATE_PATH}": ${err.message}`);
+    return {
+      currentMode: StateMode.MANUAL,
+    };
   }
 }
 

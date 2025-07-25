@@ -12,6 +12,7 @@ BEE_PID_FILE_1633="bee_1633.pid"
 # Navigate to the directory where this script resides.
 cd "$SCRIPT_DIR" || exit
 
+# TODO: make sure to only clone and build if not already present!
 # Clone the Bee repository if not already present.
 if [ ! -d "$BEE_DIR" ]; then
   echo "Cloning Bee repository into $BEE_DIR..."

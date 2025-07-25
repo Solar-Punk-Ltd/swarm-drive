@@ -31,7 +31,7 @@ describe("Swarm-CLI Integration Test: schedule", () => {
     bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
     ownerAddress = new PrivateKey(signerKey).publicKey().address().toString();
 
-    const allBatches = await bee.getAllPostageBatch();
+    const allBatches = await bee.getPostageBatches();
     const existing = allBatches.find(b => b.label === POSTAGE_LABEL);
     if (!existing) {
       await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);

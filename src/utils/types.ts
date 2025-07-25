@@ -1,3 +1,5 @@
+import { Bytes, FeedIndex, Reference } from "@ethersphere/bee-js";
+
 export interface Config {
   localDir: string;
   watchIntervalSeconds?: number;
@@ -16,4 +18,15 @@ export interface State {
   lastRemoteFiles?: string[];
   lastSync?: string;
   currentMode: StateMode;
+}
+
+interface FeedUpdateHeaders {
+  feedIndex: FeedIndex;
+  feedIndexNext?: FeedIndex;
+}
+export interface FeedPayloadResult extends FeedUpdateHeaders {
+  payload: Bytes;
+}
+export interface FeedReferenceResult extends FeedUpdateHeaders {
+  reference: Reference;
 }

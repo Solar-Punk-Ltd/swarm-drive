@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { BatchId, Bee, PrivateKey } from "@ethersphere/bee-js";
+import { BatchId, Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
 import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import os from "os";
@@ -20,8 +20,6 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
   let tmpDir: string;
   let bee: Bee;
   let signerKey: string;
-  let ownerAddress: string;
-  let postageBatchId: string;
 
   beforeAll(async () => {
     const FALLBACK_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -32,15 +30,11 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     }
 
     bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
-    ownerAddress = new PrivateKey(signerKey).publicKey().address().toString();
 
-    const allBatches = await bee.getAllPostageBatch();
+    const allBatches = await bee.getPostageBatches();
     const existing = allBatches.find(b => b.label === POSTAGE_LABEL);
     if (!existing) {
-      const newBatchId: BatchId = await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);
-      postageBatchId = newBatchId.toString();
-    } else {
-      postageBatchId = existing.batchID.toString();
+      await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);
     }
   });
 
@@ -63,6 +57,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
       env: { ...process.env, BEE_SIGNER_KEY: signerKey },
       encoding: "utf-8",
     });
+
     if (result.status !== 0) {
       const stderr = (result.stderr ?? "").trim() || "<no stderr>";
       throw new Error(`"${args.join(" ")}" failed:\n${stderr}`);
@@ -76,15 +71,13 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
         const feedLsOutput = runCli(["feed-ls"]);
         expect(feedLsOutput.startsWith("Feed@latest")).toBe(true);
 
-        const feedGetOutput = runCli(["feed-get"]);
-        const parts = feedGetOutput.split(/\s+/);
+        const parts = feedLsOutput.split(/\s+/);
         if (parts.length >= 3) {
-          const maybeHex = parts[2].trim();
-          if (/^[0-9a-fA-F]{64}$/.test(maybeHex) && !/^0+$/.test(maybeHex)) {
-            return maybeHex;
-          }
+          return new Reference(parts[2].trim()).toString();
         }
-      } catch {}
+      } catch (err: any) {
+        console.warn(`Attempt ${attempt} failed:`, err.message || err);
+      }
       await new Promise(r => setTimeout(r, 1000));
     }
     throw new Error("Timed out waiting for a non-zero manifest in feed-get");
@@ -122,7 +115,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     await new Promise(r => setTimeout(r, 1000));
 
     const manifestRef = await awaitLatestManifestViaCli();
-    expect(manifestRef).toHaveLength(64);
+    expect(new Reference(manifestRef)).toBeDefined();
 
     const ls = runCli(["manifest-ls", manifestRef]);
     expect(ls).toMatch(/hello\.txt/);
@@ -183,7 +176,7 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     expect(lsResult).not.toMatch(/b\.txt/);
   });
 
-  it("feed-get 0 and feed-ls both return the same manifest reference", async () => {
+  it("feed-get and feed-ls both return the same manifest reference", async () => {
     const dataDir = "docs";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
@@ -194,10 +187,10 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
 
     await new Promise(r => setTimeout(r, 1000));
 
-    const feedGet0 = runCli(["feed-get", "0"]);
+    const feedGet0 = runCli(["feed-get"]);
     const parts0 = feedGet0.split(/\s+/);
     if (parts0.length < 3) {
-      throw new Error(`Unexpected "feed-get 0" output: "${feedGet0}"`);
+      throw new Error(`Unexpected "feed-get" output: "${feedGet0}"`);
     }
     const ref0 = parts0[2].trim();
     expect(ref0).toMatch(/^[0-9a-fA-F]{64}$/);

@@ -1,14 +1,14 @@
+import { Bytes, FeedIndex } from "@ethersphere/bee-js";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
 import { syncCmd } from "../../src/commands/sync";
 import { saveConfig } from "../../src/utils/config";
+import { SWARM_ZERO_ADDRESS } from "../../src/utils/constants";
 import { loadState, saveState } from "../../src/utils/state";
 import * as swarm from "../../src/utils/swarm";
 import { StateMode } from "../../src/utils/types";
-import { Bytes, FeedIndex } from "@ethersphere/bee-js";
-import { SWARM_ZERO_ADDRESS } from "../../src/utils/constants";
 
 jest.mock("../../src/utils/swarm");
 jest.spyOn(swarm, "downloadRemoteFile").mockResolvedValue(new Uint8Array());
@@ -29,13 +29,13 @@ describe("sync command – latest remote-only implementation", () => {
   const NOT_FOUND_FEED_RESULT = {
     feedIndex: FeedIndex.MINUS_ONE,
     feedIndexNext: FeedIndex.fromBigInt(0n),
-    payload: SWARM_ZERO_ADDRESS,
+    reference: SWARM_ZERO_ADDRESS,
   };
 
   const FOUND_FEED_RESULT = {
     feedIndex: FeedIndex.fromBigInt(0n),
     feedIndexNext: FeedIndex.fromBigInt(1n),
-    payload: new Bytes(DUMMY_REF),
+    reference: new Bytes(DUMMY_REF),
   };
 
   beforeEach(async () => {
@@ -62,7 +62,7 @@ describe("sync command – latest remote-only implementation", () => {
     // whenever we do makeFeedReader().download(), return our dummy ref
     dummyBee.makeFeedReader = jest.fn().mockReturnValue({
       download: jest.fn().mockResolvedValue({
-        payload: new Bytes(DUMMY_REF),
+        reference: new Bytes(DUMMY_REF),
       }),
     });
   });

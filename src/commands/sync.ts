@@ -1,3 +1,4 @@
+import { Bytes, FeedIndex } from "@ethersphere/bee-js";
 import fg from "fast-glob";
 import fs from "fs/promises";
 import path from "path";
@@ -9,15 +10,14 @@ import {
   createBeeWithBatch,
   downloadRemoteFile,
   listRemoteFilesMap,
-  readDriveFeed,
   loadOrCreateMantarayNode,
+  readDriveFeed,
+  saveMantarayNode,
   updateManifest,
   writeDriveFeed,
-  saveMantarayNode,
 } from "../utils/swarm";
-import { Bytes, FeedIndex, MantarayNode, Reference } from "@ethersphere/bee-js";
 
-export async function syncCmd() {
+export async function syncCmd(): Promise<void> {
   console.log("[syncCmd] Starting sync…");
 
   const cfg = await loadConfig();
@@ -48,19 +48,21 @@ export async function syncCmd() {
     console.log("[syncCmd] skipFiles:", state.skipFiles);
   }
 
-  const { payload, feedIndex } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
-  const oldManifestRef = new Reference(payload);
-  const lastIndex = feedIndex.toBigInt();
+  const {
+    reference: oldManifestRef,
+    feedIndex,
+    feedIndexNext,
+  } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
+  const nextIndex = feedIndexNext ? feedIndexNext.toBigInt() : 0n;
   if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
     console.log("[syncCmd] feed is empty; starting at slot 0");
   } else {
-    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifestRef);
+    console.log(`[syncCmd] feed@${feedIndex} →`, oldManifestRef);
   }
 
   const mantarayNode = await loadOrCreateMantarayNode(bee, oldManifestRef.toString());
   let remoteMap: Record<string, string> = {};
   if (!oldManifestRef.equals(SWARM_ZERO_ADDRESS)) {
-    console.log("bagoy try listRemoteFilesMap");
     remoteMap = await listRemoteFilesMap(mantarayNode);
   }
   const remoteFiles = Object.keys(remoteMap);
@@ -227,7 +229,6 @@ export async function syncCmd() {
   const realAdds = succeededAdds.filter(f => !toDeleteLocal.includes(f));
   const didChange = realAdds.length > 0 || succeededUploads.length > 0 || toDeleteRemote.length > 0;
   if (didChange) {
-    const nextIndex = oldManifestRef === undefined ? 0n : lastIndex + 1n;
     console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifestRef);
     await writeDriveFeed(bee, DRIVE_FEED_TOPIC, swarmDriveBatch.batchID, newManifestRef, nextIndex);
   } else {

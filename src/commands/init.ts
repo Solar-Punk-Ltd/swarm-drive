@@ -6,7 +6,7 @@ import { CONFIG_FILE, DEFAULT_BEE_URL, STATE_PATH_NAME } from "../utils/constant
 import { createBeeWithBatch } from "../utils/swarm";
 import { Config } from "../utils/types";
 
-export async function initCmd(localDir: string) {
+export async function initCmd(localDir: string): Promise<void> {
   const resolvedDir = path.resolve(localDir);
 
   try {

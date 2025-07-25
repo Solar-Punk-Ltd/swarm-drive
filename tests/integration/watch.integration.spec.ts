@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
+import { Bee, PrivateKey } from "@ethersphere/bee-js";
 import { ChildProcess, spawn, spawnSync } from "child_process";
 import fs from "fs-extra";
 import os from "os";
@@ -36,7 +36,7 @@ describe("Swarm-CLI Integration Test: watch", () => {
     ownerAddress = new PrivateKey(signerKey).publicKey().address().toString();
 
     // 2) Ensure “swarm-drive-stamp” exists (or else buy one)
-    const allBatches = await bee.getAllPostageBatch();
+    const allBatches = await bee.getPostageBatches();
     const existing = allBatches.find(b => b.label === POSTAGE_LABEL);
     if (!existing) {
       // This account must already be funded on your local Bee node
@@ -69,6 +69,7 @@ describe("Swarm-CLI Integration Test: watch", () => {
       env: { ...process.env, BEE_SIGNER_KEY: signerKey },
       encoding: "utf-8",
     });
+
     if (result.status !== 0) {
       const stderr = (result.stderr || "").trim();
       throw new Error(`"${args.join(" ")}" failed:\n${stderr}`);

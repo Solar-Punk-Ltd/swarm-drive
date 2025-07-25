@@ -9,7 +9,7 @@ import { StateMode } from "../utils/types";
 
 import { syncCmd } from "./sync";
 
-export async function watchCmd(debounceSec?: number) {
+export async function watchCmd(debounceSec?: number): Promise<void> {
   const { localDir, watchIntervalSeconds } = await loadConfig();
 
   const ms =

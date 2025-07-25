@@ -28,7 +28,12 @@ describe("Swarm-CLI Integration Tests (status)", () => {
   });
 
   function runCli(args: string[]) {
-    return spawnSync(process.execPath, [CLI_PATH, ...args], { cwd: tmpDir, encoding: "utf8" });
+    const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+      cwd: tmpDir,
+      encoding: "utf8",
+    });
+
+    return result;
   }
 
   it("errors if no config exists", () => {

@@ -1,20 +1,10 @@
-import {
-  BatchId,
-  Bee,
-  Bytes,
-  FeedIndex,
-  MantarayNode,
-  PostageBatch,
-  PrivateKey,
-  Reference,
-  Topic,
-} from "@ethersphere/bee-js";
+import { BatchId, Bee, FeedIndex, MantarayNode, PostageBatch, PrivateKey, Reference, Topic } from "@ethersphere/bee-js";
 import fs from "fs/promises";
 import inquirer from "inquirer";
 
 import { DEFAULT_BEE_URL, SWARM_DRIVE_STAMP_LABEL, SWARM_ZERO_ADDRESS } from "./constants";
-import { FeedPayloadResult } from "@ethersphere/bee-js/dist/types/modules/feed";
 import { isNotFoundError } from "./helpers";
+import { FeedReferenceResult } from "./types";
 
 export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
   const signerKey = privateKey ?? process.env.BEE_SIGNER_KEY;
@@ -146,7 +136,6 @@ export async function listRemoteFilesMap(node: MantarayNode): Promise<Record<str
   const nodesMap = node.collectAndMap();
   const out: Record<string, string> = {};
   for (const [p, ref] of Object.entries(nodesMap)) {
-    console.log("bagoy listRemoteFilesMap p, ref", p, ref);
     const key = p.startsWith("/") ? p.slice(1) : p;
     out[key] = ref.toString();
   }
@@ -170,8 +159,9 @@ export async function loadOrCreateMantarayNode(bee: Bee, ref: string | Reference
   }
 
   try {
-    const node = await MantarayNode.unmarshal(bee, new Reference(ref));
+    const node = await MantarayNode.unmarshal(bee, ref);
     await node.loadRecursively(bee);
+    return node;
   } catch (err: any) {
     console.log(`Failed to load mantaray node: ${err}, returning a new node.`);
   }
@@ -184,19 +174,19 @@ export async function readDriveFeed(
   identifier: string | Uint8Array,
   address: string,
   index?: FeedIndex,
-): Promise<FeedPayloadResult> {
+): Promise<FeedReferenceResult> {
   try {
     const feedReader = bee.makeFeedReader(identifier, address);
     if (index !== undefined) {
-      return await feedReader.download({ index });
+      return await feedReader.downloadReference({ index });
     }
-    return await feedReader.download();
+    return await feedReader.downloadReference();
   } catch (error) {
     if (isNotFoundError(error)) {
       return {
         feedIndex: FeedIndex.MINUS_ONE,
         feedIndexNext: FeedIndex.fromBigInt(0n),
-        payload: SWARM_ZERO_ADDRESS,
+        reference: SWARM_ZERO_ADDRESS,
       };
     }
 

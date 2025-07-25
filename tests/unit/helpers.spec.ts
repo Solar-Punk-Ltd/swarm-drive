@@ -1,8 +1,8 @@
 import { Bee, Bytes, FeedIndex } from "@ethersphere/bee-js";
 
 import { feedGet, listStamps, manifestLs } from "../../src/commands/helpers";
-import * as swarmUtils from "../../src/utils/swarm";
 import { SWARM_ZERO_ADDRESS } from "../../src/utils/constants";
+import * as swarmUtils from "../../src/utils/swarm";
 jest.mock("../../src/utils/swarm");
 
 describe("helpers.ts", () => {
@@ -15,12 +15,12 @@ describe("helpers.ts", () => {
   const NOT_FOUND_FEED_RESULT = {
     feedIndex: FeedIndex.MINUS_ONE,
     feedIndexNext: FeedIndex.fromBigInt(0n),
-    payload: SWARM_ZERO_ADDRESS,
+    reference: SWARM_ZERO_ADDRESS,
   };
   const FOUND_FEED_RESULT = {
     feedIndex: FeedIndex.fromBigInt(0n),
     feedIndexNext: FeedIndex.fromBigInt(1n),
-    payload: new Bytes(DUMMY_REF),
+    reference: new Bytes(DUMMY_REF),
   };
 
   beforeAll(() => {
@@ -59,7 +59,7 @@ describe("helpers.ts", () => {
     it("prints data ref when found", async () => {
       (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(FOUND_FEED_RESULT);
       await feedGet(5);
-      expect(logSpy).toHaveBeenCalledWith(`Feed@${5} → ${FOUND_FEED_RESULT.payload.toString()}`);
+      expect(logSpy).toHaveBeenCalledWith(`Feed@${5} → ${FOUND_FEED_RESULT.reference.toString()}`);
     });
 
     it("throws on invalid index error", async () => {
@@ -69,7 +69,7 @@ describe("helpers.ts", () => {
     it("prints latest when no indexArg and readDriveFeed returns ref", async () => {
       (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(FOUND_FEED_RESULT);
       await feedGet();
-      expect(logSpy).toHaveBeenCalledWith(`Feed@latest → ${FOUND_FEED_RESULT.payload.toString()}`);
+      expect(logSpy).toHaveBeenCalledWith(`Feed@latest → ${FOUND_FEED_RESULT.reference.toString()}`);
     });
 
     it("exits on readDriveFeed error", async () => {
