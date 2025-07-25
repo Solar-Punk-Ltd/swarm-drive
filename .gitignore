@@ -5,6 +5,7 @@
 dist/
 data/
 node_modules/
-/*bee*.log
-/*bee*.pid
+tests/**/*.log
+tests/**/*.pid
 bee-dev
+.vscode/
