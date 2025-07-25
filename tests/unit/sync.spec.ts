@@ -42,7 +42,7 @@ describe("sync command – latest remote-only implementation", () => {
     (swarm.writeDriveFeed as jest.Mock).mockResolvedValue(undefined);
 
     // default: no entries in the feed (slot 0 missing)
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValue(-1n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValue(-1n);
 
     // whenever we do makeFeedReader().download(), return our dummy ref
     dummyBee.makeFeedReader = jest.fn().mockReturnValue({
@@ -60,12 +60,12 @@ describe("sync command – latest remote-only implementation", () => {
 
   it("no-ops when nothing changed", async () => {
     await fs.writeFile(path.join(tmp, "a.txt"), "foo");
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(-1n);
     (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
 
     await syncCmd();
 
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(0n);
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "a.txt": "refA" });
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("foo"));
 
@@ -81,7 +81,7 @@ describe("sync command – latest remote-only implementation", () => {
   });
 
   it("pulls a remote-only file when none locally", async () => {
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(0n);
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "c.txt": "refC" });
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Buffer.from("dataC"));
 
@@ -96,11 +96,11 @@ describe("sync command – latest remote-only implementation", () => {
 
   it("uploads a modified local file", async () => {
     await fs.writeFile(path.join(tmp, "b.txt"), "old");
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(-1n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(-1n);
     (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
     await syncCmd();
 
-    (swarm.readFeedIndex as jest.Mock).mockResolvedValueOnce(0n);
+    (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(0n);
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "b.txt": "refB" });
     (swarm.downloadRemoteFile as jest.Mock)
       .mockResolvedValueOnce(Buffer.from("old"))

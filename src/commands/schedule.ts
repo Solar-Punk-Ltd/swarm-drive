@@ -1,5 +1,6 @@
 import { loadConfig } from "../utils/config";
 import { loadState, saveState } from "../utils/state";
+import { StateMode } from "../utils/types";
 
 import { syncCmd } from "./sync";
 
@@ -11,22 +12,19 @@ export async function scheduleCmd(intervalSec: number): Promise<void> {
   console.log("Initial run: running sync now…");
   try {
     await syncCmd();
-  } catch (err) {
-    console.error("Error during initial sync:", (err as Error).message);
+  } catch (err: any) {
+    console.error("Error during initial sync:", err.message || err);
   }
 
-  loadState()
-    .then(state => {
-      state.currentMode = "schedule";
-      return saveState(state);
-    })
-    .catch(() => {});
+  const state = await loadState();
+  state.currentMode = StateMode.SCHEDULE;
+  await saveState(state);
 
   setInterval(async () => {
     try {
       await syncCmd();
-    } catch (err) {
-      console.error("Error during scheduled sync:", (err as Error).message);
+    } catch (err: any) {
+      console.error("Error during scheduled sync:", err.message || err);
     }
   }, intervalSec * 1000);
 }

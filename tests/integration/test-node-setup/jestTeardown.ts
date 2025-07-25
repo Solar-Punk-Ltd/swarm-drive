@@ -6,7 +6,7 @@ export default async function globalTeardown(): Promise<void> {
   const scriptPath = path.resolve(__dirname, "stopBeeNode.sh");
 
   try {
-    execSync(`chmod +x ${scriptPath}`); // Ensure the script is executable
+    execSync(`chmod +x ${scriptPath}`);
     execSync(scriptPath, { stdio: "inherit" });
     console.log("Bee Nodes stopped successfully");
   } catch (error) {

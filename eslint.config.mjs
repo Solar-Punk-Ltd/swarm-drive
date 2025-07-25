@@ -82,22 +82,6 @@ export default [
       },
     },
   },
-  {
-    files: ["tests/**/*spec.ts"],
-    plugins: {
-      jest: pluginJest,
-    },
-    languageOptions: {
-      globals: pluginJest.environments.globals.globals,
-    },
-    rules: {
-      "jest/no-disabled-tests": "warn",
-      "jest/no-focused-tests": "error",
-      "jest/no-identical-title": "error",
-      "jest/prefer-to-have-length": "warn",
-      "jest/valid-expect": "error",
-    },
-  },
   // Include all the extended configs
   eslintRecommended,
   typescriptRecommended,
@@ -130,6 +114,23 @@ export default [
           ],
         },
       ],
+    },
+  },
+  {
+    files: ["tests/**/*spec.ts"],
+    plugins: {
+      jest: pluginJest,
+    },
+    languageOptions: {
+      globals: pluginJest.environments.globals.globals,
+    },
+    rules: {
+      "jest/no-disabled-tests": "warn",
+      "jest/no-focused-tests": "error",
+      "jest/no-identical-title": "error",
+      "jest/prefer-to-have-length": "warn",
+      "jest/valid-expect": "error",
+      "@typescript-eslint/explicit-function-return-type": "off",
     },
   },
 ];

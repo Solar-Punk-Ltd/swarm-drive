@@ -3,11 +3,10 @@ import Path from "path";
 
 export default async function globalSetup(): Promise<void> {
   console.log("Starting Bee Nodes...");
-  // This script now runs the modified shell script that starts two nodes.
   const scriptPath = Path.resolve(__dirname, "runBeeNode.sh");
 
   try {
-    execSync(`chmod +x ${scriptPath}`); // Ensure the script is executable
+    execSync(`chmod +x ${scriptPath}`);
     execSync(scriptPath, { stdio: "inherit" });
     console.log("Bee Nodes started successfully");
   } catch (error) {

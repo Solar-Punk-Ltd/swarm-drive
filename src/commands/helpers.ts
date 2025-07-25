@@ -28,16 +28,13 @@ export async function feedGet(indexArg?: number): Promise<void> {
   }
 }
 
-export async function feedLs(indexArg?: number): Promise<void> {
-  const { feedGet } = await import("./helpers");
-  return feedGet(indexArg);
-}
-
 export async function manifestLs(manifestRef: string): Promise<void> {
   const bee = swarmUtils.makeBeeWithSigner();
 
   try {
-    const map = await swarmUtils.listRemoteFilesMap(bee, manifestRef);
+    const node = await swarmUtils.loadOrCreateMantarayNode(bee, manifestRef);
+
+    const map = await swarmUtils.listRemoteFilesMap(node);
     const files = Object.keys(map);
     if (files.length === 0) {
       console.log(`Manifest ${manifestRef} is empty.`);

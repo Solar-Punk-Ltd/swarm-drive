@@ -19,8 +19,8 @@ jest.mock("@ethersphere/bee-js", () => {
         const otherBuf = Buffer.isBuffer(other)
           ? other
           : other instanceof (this.constructor as any)
-            ? (other as any).buf
-            : null;
+          ? (other as any).buf
+          : null;
         return Buffer.isBuffer(otherBuf) && this.buf.equals(otherBuf);
       }
       toString() {
@@ -36,7 +36,7 @@ jest.mock("@ethersphere/bee-js", () => {
 
 import { Bee } from "@ethersphere/bee-js";
 
-import { feedGet, listStamps, manifestLs } from "../../src/utils/swarm";
+import { feedGet, listStamps, manifestLs } from "../../src/commands/helpers";
 import * as swarmUtils from "../../src/utils/swarm";
 jest.mock("../../src/utils/swarm");
 
@@ -50,7 +50,7 @@ describe("helpers.ts", () => {
     originalEnv = { ...process.env };
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: number) => {
+    exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
       throw new Error(`Process exited with code: ${code}`);
     });
   });

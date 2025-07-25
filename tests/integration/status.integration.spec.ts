@@ -3,6 +3,9 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
+import { CONFIG_FILE, STATE_PATH_NAME } from "../../src/utils/constants";
+import { StateMode } from "../../src/utils/types";
+
 jest.setTimeout(20000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
@@ -15,8 +18,8 @@ describe("Swarm-CLI Integration Tests (status)", () => {
     tmpDir = path.join(os.tmpdir(), `swarm-cli-status-${Date.now()}`);
     await fs.ensureDir(tmpDir);
     process.chdir(tmpDir);
-    await fs.remove(path.join(tmpDir, ".swarm-sync.json"));
-    await fs.remove(path.join(tmpDir, ".swarm-sync-state.json"));
+    await fs.remove(path.join(tmpDir, CONFIG_FILE));
+    await fs.remove(path.join(tmpDir, STATE_PATH_NAME));
   });
 
   afterEach(async () => {
@@ -35,7 +38,7 @@ describe("Swarm-CLI Integration Tests (status)", () => {
   });
 
   it("prints defaults when config exists but no state", () => {
-    fs.writeJsonSync(path.join(tmpDir, ".swarm-sync.json"), { localDir: "foo" });
+    fs.writeJsonSync(path.join(tmpDir, CONFIG_FILE), { localDir: "foo" });
     const r = runCli(["status"]);
     expect(r.status).toBe(0);
     const out = r.stdout.split("\n").map(l => l.trim());
@@ -47,13 +50,13 @@ describe("Swarm-CLI Integration Tests (status)", () => {
 
   it("reflects watch mode and prints only watchIntervalSeconds", () => {
     // seed config and state for watch
-    fs.writeJsonSync(path.join(tmpDir, ".swarm-sync.json"), {
+    fs.writeJsonSync(path.join(tmpDir, CONFIG_FILE), {
       localDir: "watched",
       watchIntervalSeconds: 5,
     });
     const now = new Date().toISOString();
-    fs.writeJsonSync(path.join(tmpDir, ".swarm-sync-state.json"), {
-      currentMode: "watch",
+    fs.writeJsonSync(path.join(tmpDir, STATE_PATH_NAME), {
+      currentMode: StateMode.WATCH,
       lastSync: now,
       lastFiles: ["x.txt"],
     });
@@ -73,14 +76,14 @@ describe("Swarm-CLI Integration Tests (status)", () => {
   });
 
   it("reflects schedule mode, intervals, lastSync and file count", () => {
-    fs.writeJsonSync(path.join(tmpDir, ".swarm-sync.json"), {
+    fs.writeJsonSync(path.join(tmpDir, CONFIG_FILE), {
       localDir: "bar",
       watchIntervalSeconds: 12,
       scheduleIntervalSeconds: 34,
     });
     const now = new Date().toISOString();
-    fs.writeJsonSync(path.join(tmpDir, ".swarm-sync-state.json"), {
-      currentMode: "schedule",
+    fs.writeJsonSync(path.join(tmpDir, STATE_PATH_NAME), {
+      currentMode: StateMode.SCHEDULE,
       lastSync: now,
       lastFiles: ["a.txt", "b.txt", "c.txt"],
     });

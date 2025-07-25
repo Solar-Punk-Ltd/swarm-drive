@@ -6,6 +6,8 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
+import { CONFIG_FILE, STATE_PATH_NAME } from "../../src/utils/constants";
+
 jest.setTimeout(30000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
@@ -36,10 +38,10 @@ describe("Swarm-CLI Integration Tests (init only)", () => {
     });
     expect(result.status).toBe(0);
 
-    const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
+    const cfg = fs.readJsonSync(path.join(tmpDir, CONFIG_FILE));
     expect(cfg.localDir).toBe(path.resolve(folderName));
 
-    const stateFile = path.join(tmpDir, ".swarm-sync-state.json");
+    const stateFile = path.join(tmpDir, STATE_PATH_NAME);
     expect(fs.existsSync(stateFile)).toBe(true);
     const stateObj = fs.readJsonSync(stateFile);
     expect(stateObj).toEqual({});

@@ -4,7 +4,9 @@ import path from "path";
 
 import { statusCmd } from "../../src/commands/status";
 import * as cfgMod from "../../src/utils/config";
+import { CONFIG_FILE } from "../../src/utils/constants";
 import * as stateMod from "../../src/utils/state";
+import { StateMode } from "../../src/utils/types";
 
 jest.mock("../../src/utils/config");
 jest.mock("../../src/utils/state");
@@ -33,7 +35,7 @@ describe("status command", () => {
     }) as any);
     await expect(statusCmd()).rejects.toThrow("exit");
     expect(errSpy).toHaveBeenCalledWith(
-      'Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.',
+      `Error: config file ${CONFIG_FILE} not found. Please run "swarm-drive init <localDir>" first.`,
     );
     exitSpy.mockRestore();
   });
@@ -60,7 +62,7 @@ describe("status command", () => {
     });
     const lastSync = new Date("2025-01-01T00:10:00Z").toISOString();
     (stateMod.loadState as jest.Mock).mockResolvedValue({
-      currentMode: "watch",
+      currentMode: StateMode.WATCH,
       lastSync,
       lastFiles: ["a.txt", "b.txt"],
     });
@@ -77,7 +79,7 @@ describe("status command", () => {
 
   it("prints schedule mode when currentMode is schedule", async () => {
     (cfgMod.loadConfig as jest.Mock).mockResolvedValue({ localDir: "/data" });
-    (stateMod.loadState as jest.Mock).mockResolvedValue({ currentMode: "schedule" });
+    (stateMod.loadState as jest.Mock).mockResolvedValue({ currentMode: StateMode.SCHEDULE });
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     await statusCmd();
     expect(logSpy).toHaveBeenCalledWith("active mode: schedule");

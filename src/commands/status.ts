@@ -1,4 +1,5 @@
 import { loadConfig } from "../utils/config";
+import { CONFIG_FILE } from "../utils/constants";
 import { loadState } from "../utils/state";
 
 export async function statusCmd(): Promise<void> {
@@ -7,7 +8,7 @@ export async function statusCmd(): Promise<void> {
     cfg = await loadConfig();
     if (!cfg.localDir) throw new Error();
   } catch {
-    console.error('Error: config file ".swarm-sync.json" not found. Please run "swarm-drive init <localDir>" first.');
+    console.error(`Error: config file "${CONFIG_FILE}" not found. Please run "swarm-drive init <localDir>" first.`);
     process.exit(1);
   }
 
@@ -16,14 +17,7 @@ export async function statusCmd(): Promise<void> {
   console.log("Swarm Drive Status");
   console.log("------------------");
   console.log(`localDir: ${cfg.localDir}`);
-
-  if (state.currentMode === "watch") {
-    console.log("active mode: watch");
-  } else if (state.currentMode === "schedule") {
-    console.log("active mode: schedule");
-  } else {
-    console.log("active mode: manual");
-  }
+  console.log(`active mode: ${state.currentMode}`);
 
   if (cfg.watchIntervalSeconds !== undefined) {
     console.log(`watchIntervalSeconds: ${cfg.watchIntervalSeconds}`);

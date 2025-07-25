@@ -92,49 +92,39 @@ export async function buyStamp(
 export async function addRemoveFork(
   bee: Bee,
   batchId: BatchId,
-  manifestRef: string | undefined,
+  node: MantarayNode,
   localPath: string,
   prefix: string,
   remove = false,
-): Promise<string> {
-  let node: MantarayNode;
-
-  if (manifestRef) {
-    try {
-      node = await loadMantarayNode(bee, manifestRef);
-    } catch (err: any) {
-      node = new MantarayNode();
-    }
-  } else {
-    node = new MantarayNode();
-  }
-
+): Promise<void> {
   if (remove) {
-    try {
-      node.removeFork(prefix);
-    } catch (err: any) {
-      console.error("failed to remove fork: ", err);
-    }
+    node.removeFork(prefix);
   } else {
     const data = await fs.readFile(localPath);
     const uploadRes = await bee.uploadData(batchId, data, { pin: true });
     node.addFork(prefix, uploadRes.reference.toString());
   }
+}
 
-  const saved = await node.saveRecursively(bee, batchId, { pin: true });
-  return saved.reference.toString();
+export async function saveMantarayNode(bee: Bee, node: MantarayNode, batchId: BatchId): Promise<string | undefined> {
+  try {
+    const saved = await node.saveRecursively(bee, batchId, { pin: true });
+    return saved.reference.toString();
+  } catch (error: any) {
+    console.error("Error saving mantaray node:", error.message);
+  }
 }
 
 export async function updateManifest(
   bee: Bee,
   batchId: BatchId,
-  manifestRef: string | undefined,
+  node: MantarayNode,
   localPath: string,
   prefix: string,
   remove = false,
-): Promise<string> {
+): Promise<void> {
   try {
-    return await addRemoveFork(bee, batchId, manifestRef, localPath, prefix, remove);
+    await addRemoveFork(bee, batchId, node, localPath, prefix, remove);
   } catch (err: any) {
     if (err.message.includes("Invalid array length")) {
       const batch = await getBatch(bee, batchId);
@@ -150,9 +140,7 @@ export async function updateManifest(
   }
 }
 
-export async function listRemoteFilesMap(bee: Bee, manifestRef: string): Promise<Record<string, string>> {
-  const node = await loadMantarayNode(bee, manifestRef);
-
+export async function listRemoteFilesMap(node: MantarayNode): Promise<Record<string, string>> {
   const nodesMap = node.collectAndMap();
   const out: Record<string, string> = {};
   for (const [p, ref] of Object.entries(nodesMap)) {
@@ -162,12 +150,10 @@ export async function listRemoteFilesMap(bee: Bee, manifestRef: string): Promise
   return out;
 }
 
-export async function downloadRemoteFile(bee: Bee, manifestRef: string, prefix: string): Promise<Uint8Array> {
-  const node = await loadMantarayNode(bee, manifestRef);
-
+export async function downloadRemoteFile(bee: Bee, node: MantarayNode, prefix: string): Promise<Uint8Array> {
   const leaf = node.find(prefix);
   if (!leaf) {
-    throw new Error(`Path "${prefix}" not found in manifest ${manifestRef}`);
+    throw new Error(`Path "${prefix}" not found in manifest ${new Reference(node.targetAddress).toString()}`);
   }
 
   const ref = new Reference(leaf.targetAddress);
@@ -175,16 +161,19 @@ export async function downloadRemoteFile(bee: Bee, manifestRef: string, prefix: 
   return data.toUint8Array();
 }
 
-async function loadMantarayNode(bee: Bee, ref: string | Reference): Promise<MantarayNode> {
-  let node: MantarayNode;
-  try {
-    node = await MantarayNode.unmarshal(bee, new Reference(ref));
-    await node.loadRecursively(bee);
-  } catch (err: any) {
-    throw new Error(`Failed to load mantaray node: ${err}`);
+export async function loadOrCreateMantarayNode(bee: Bee, ref?: string | Reference): Promise<MantarayNode> {
+  if (!ref) {
+    return new MantarayNode();
   }
 
-  return node;
+  try {
+    const node = await MantarayNode.unmarshal(bee, new Reference(ref));
+    await node.loadRecursively(bee);
+  } catch (err: any) {
+    console.log(`Failed to load mantaray node: ${err}, returning a new node.`);
+  }
+
+  return new MantarayNode();
 }
 
 export async function readDriveFeed(

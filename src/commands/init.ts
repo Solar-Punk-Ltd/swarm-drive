@@ -1,10 +1,10 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { Config } from "../types";
 import { saveConfig } from "../utils/config";
 import { CONFIG_FILE, STATE_PATH_NAME } from "../utils/constants";
 import { createBeeWithBatch } from "../utils/swarm";
+import { Config } from "../utils/types";
 
 export async function initCmd(localDir: string) {
   const resolvedDir = path.resolve(localDir);

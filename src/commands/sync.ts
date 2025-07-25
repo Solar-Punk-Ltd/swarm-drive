@@ -1,18 +1,21 @@
-import { FeedIndex, Reference as BeeReference } from "@ethersphere/bee-js";
+import { FeedIndex, Reference } from "@ethersphere/bee-js";
 import fg from "fast-glob";
 import fs from "fs/promises";
 import path from "path";
 
 import { loadConfig } from "../utils/config";
-import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants";
+import { DRIVE_FEED_TOPIC } from "../utils/constants";
+import { isNotFoundError } from "../utils/helpers";
 import { loadState, saveState } from "../utils/state";
 import {
   createBeeWithBatch,
   downloadRemoteFile,
   listRemoteFilesMap,
   readDriveFeed,
+  loadOrCreateMantarayNode,
   updateManifest,
   writeDriveFeed,
+  saveMantarayNode,
 } from "../utils/swarm";
 
 export async function syncCmd() {
@@ -22,63 +25,63 @@ export async function syncCmd() {
   const state = await loadState();
   const prevFiles = state.lastFiles || [];
   const prevRemote = state.lastRemoteFiles || [];
-  const prevSkipped = state.skipFiles || [];
   const lastSyncTime = state.lastSync ? Date.parse(state.lastSync) : 0;
 
   console.log("[syncCmd] Loaded state:", state);
 
   const { bee, swarmDriveBatch } = await createBeeWithBatch();
-  const batchID = swarmDriveBatch.batchID;
   const owner = bee.signer!.publicKey().address().toString();
-  const rawRemaining = swarmDriveBatch.remainingSize?.toBytes() ?? 0;
-  const remainingBytes = BigInt(rawRemaining);
+  const remainingBytes = swarmDriveBatch.remainingSize.toBytes();
 
   console.log("[syncCmd] Bee ready → owner:", owner);
-  console.log(`[syncCmd] Stamp remaining bytes → ${rawRemaining} bytes`);
-  const { index: lastIndex } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
+  console.log(`[syncCmd] Stamp remaining bytes → ${remainingBytes} bytes`);
 
-  console.log("[syncCmd] feed@latest index →", lastIndex);
-
-  let oldManifest: string | undefined;
-  if (lastIndex >= 0n) {
-    const reader = bee.makeFeedReader(DRIVE_FEED_TOPIC.toUint8Array(), owner);
-    const msg = await reader.download({ index: FeedIndex.fromBigInt(lastIndex) });
-    const raw = msg.payload.toUint8Array();
-    if (raw.length === 32) {
-      const ref = new BeeReference(raw);
-      if (!ref.equals(SWARM_ZERO_ADDRESS)) {
-        oldManifest = ref.toString();
-      }
+  let oldManifestRef: string | undefined;
+  let lastIndex: bigint | undefined;
+  try {
+    const { ref, index } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
+    oldManifestRef = ref.toString();
+    lastIndex = index;
+    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifestRef);
+  } catch (err: any) {
+    if (!isNotFoundError(err)) {
+      console.error("[syncCmd] Failed to read feed:", err.message || err);
+      return;
     }
-    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifest ?? "(empty)");
-  } else {
+
+    lastIndex = 0n;
     console.log("[syncCmd] feed is empty; starting at slot 0");
   }
+
+  const mantarayNode = await loadOrCreateMantarayNode(bee, oldManifestRef);
 
   const localFiles = await fg("**/*", { cwd: cfg.localDir, onlyFiles: true });
   console.log("[syncCmd] prevFiles:", prevFiles);
   console.log("[syncCmd] localFiles:", localFiles);
 
-  if (state.skipFiles) {
+  if (state.skipFiles && state.skipFiles.length > 0) {
     state.skipFiles = state.skipFiles.filter(f => localFiles.includes(f));
+    console.log("[syncCmd] skipFiles:", state.skipFiles);
   }
 
   let remoteMap: Record<string, string> = {};
-  if (oldManifest) {
+  if (oldManifestRef) {
     try {
-      remoteMap = await listRemoteFilesMap(bee, oldManifest);
-    } catch {
-      console.warn("[syncCmd] failed to load old manifest, assuming empty");
+      remoteMap = await listRemoteFilesMap(mantarayNode);
+    } catch (err: any) {
+      console.warn("[syncCmd] failed to load old manifest, assuming empty: ", err.message || err);
     }
   }
   const remoteFiles = Object.keys(remoteMap);
 
-  const prevLocal = state.lastFiles || [];
-  const skipped = new Set(state.skipFiles || []);
-
-  let toDeleteLocal = prevLocal.filter(
-    f => localFiles.includes(f) && !remoteFiles.includes(f) && prevRemote.includes(f) && !skipped.has(f),
-  );
+  let toDeleteLocal: string[] = [];
+  if (prevFiles && prevFiles.length > 0) {
+    // todo: why set?
+    const skipped = new Set(state.skipFiles || []);
+    toDeleteLocal = prevFiles.filter(
+      f => localFiles.includes(f) && !remoteFiles.includes(f) && prevRemote.includes(f) && !skipped.has(f),
+    );
+  }
 
   console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal);
 
@@ -90,7 +93,7 @@ export async function syncCmd() {
   let toUpload: string[] = [];
   for (const f of localFiles.filter(f => remoteMap[f])) {
     const abs = path.join(cfg.localDir, f);
-    const [localBuf, remoteBuf] = await Promise.all([fs.readFile(abs), downloadRemoteFile(bee, oldManifest!, f)]);
+    const [localBuf, remoteBuf] = await Promise.all([fs.readFile(abs), downloadRemoteFile(bee, mantarayNode, f)]);
     if (!Buffer.from(localBuf).equals(Buffer.from(remoteBuf))) {
       const stat = await fs.stat(abs);
       if (stat.mtimeMs >= lastSyncTime) {
@@ -102,6 +105,7 @@ export async function syncCmd() {
       }
     }
   }
+
   const toPull = Array.from(new Set([...toPullGeneral, ...toPullConflict]));
 
   console.log("[syncCmd] toAdd:", toAdd);
@@ -122,6 +126,7 @@ export async function syncCmd() {
     state.lastRemoteFiles = remoteFiles;
     state.lastSync = new Date().toISOString();
     await saveState(state);
+
     return;
   }
 
@@ -133,7 +138,7 @@ export async function syncCmd() {
     stats.sort((a, b) => a.size - b.size);
 
     const totalCandidates = stats.reduce((sum, s) => sum + s.size, 0);
-    console.log(`[syncCmd] stamp has ${rawRemaining} bytes left; total drive size needed = ${totalCandidates} bytes`);
+    console.log(`[syncCmd] stamp has ${remainingBytes} bytes left; total drive size needed = ${totalCandidates} bytes`);
 
     let used = 0n;
     const willUpload = new Set<string>();
@@ -141,7 +146,7 @@ export async function syncCmd() {
 
     for (const { path: file, size } of stats) {
       const sz = BigInt(size);
-      if (used + sz <= remainingBytes) {
+      if (used + sz <= BigInt(remainingBytes)) {
         used += sz;
         willUpload.add(file);
       } else {
@@ -152,8 +157,7 @@ export async function syncCmd() {
     if (skipped.length) {
       console.warn(`[syncCmd] Stamp full: skipping ${skipped.length} file(s):`, skipped);
 
-      const skippedSet = new Set(skipped);
-      toDeleteLocal = toDeleteLocal.filter(f => !skippedSet.has(f));
+      toDeleteLocal = toDeleteLocal.filter(f => !skipped.includes(f));
       console.log("[syncCmd] Preserving capacity-skipped files from deletion:", skipped);
 
       state.skipFiles = Array.from(new Set([...(state.skipFiles || []), ...skipped]));
@@ -163,8 +167,6 @@ export async function syncCmd() {
     toUpload = toUpload.filter(f => willUpload.has(f));
   }
 
-  let newManifest = oldManifest;
-
   for (const f of toDeleteLocal) {
     console.log("🗑️  Remote deleted → removing local file", f);
     await fs.rm(path.join(cfg.localDir, f), { force: true });
@@ -173,11 +175,14 @@ export async function syncCmd() {
 
   for (const f of toPull) {
     if (toDeleteLocal.includes(f)) continue;
+
     console.log("⤵️  Pull →", f);
-    const data = await downloadRemoteFile(bee, oldManifest!, f);
+    const data = await downloadRemoteFile(bee, mantarayNode, f);
     const dst = path.join(cfg.localDir, f);
+
     await fs.mkdir(path.dirname(dst), { recursive: true });
     await fs.writeFile(dst, data);
+
     if (!localFiles.includes(f)) localFiles.push(f);
   }
 
@@ -185,39 +190,55 @@ export async function syncCmd() {
   for (const f of toAdd) {
     console.log("➕ Add →", f);
     try {
-      newManifest = await updateManifest(bee, batchID, newManifest, path.join(cfg.localDir, f), f, false);
+      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, path.join(cfg.localDir, f), f, false);
+
       succeededAdds.push(f);
     } catch (err: any) {
       console.error(`Error uploading "${f}":`, err.message);
     }
   }
-  toAdd = succeededAdds;
+
+  let newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
+  if (!newManifestRef) {
+    console.error("[syncCmd] Failed to save mantaray node after Add; aborting sync.");
+    return;
+  }
 
   const succeededUploads: string[] = [];
   for (const f of toUpload) {
     console.log("⬆️  Upload →", f);
     try {
-      newManifest = await updateManifest(bee, batchID, newManifest, "", f, true);
-      newManifest = await updateManifest(bee, batchID, newManifest, path.join(cfg.localDir, f), f, false);
+      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, "", f, true);
+      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, path.join(cfg.localDir, f), f, false);
       succeededUploads.push(f);
     } catch (err: any) {
       console.error(`Error updating "${f}":`, err.message);
     }
   }
-  toUpload = succeededUploads;
+
+  newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
+  if (!newManifestRef) {
+    console.error("[syncCmd] Failed to save mantaray node after Upload; aborting sync.");
+    return;
+  }
 
   for (const f of toDeleteRemote) {
     console.log("🗑️  Delete →", f);
-    newManifest = await updateManifest(bee, batchID, newManifest, "", f, true);
+    await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, "", f, true);
   }
 
-  const realAdds = toAdd.filter(f => !toDeleteLocal.includes(f));
-  const didChange = realAdds.length > 0 || toUpload.length > 0 || toDeleteRemote.length > 0;
-  let nextIndex = lastIndex;
+  newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
+  if (!newManifestRef) {
+    console.error("[syncCmd] Failed to save mantaray node after Remote Delete; aborting sync.");
+    return;
+  }
+
+  const realAdds = succeededAdds.filter(f => !toDeleteLocal.includes(f));
+  const didChange = realAdds.length > 0 || succeededUploads.length > 0 || toDeleteRemote.length > 0;
   if (didChange) {
-    nextIndex = oldManifest === undefined ? 0n : lastIndex + 1n;
-    console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifest);
-    await writeDriveFeed(bee, DRIVE_FEED_TOPIC, batchID, newManifest!, nextIndex);
+    const nextIndex = oldManifestRef === undefined ? 0n : lastIndex + 1n;
+    console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifestRef);
+    await writeDriveFeed(bee, DRIVE_FEED_TOPIC, swarmDriveBatch.batchID, newManifestRef, nextIndex);
   } else {
     console.log("✅ [syncCmd] No uploads to feed; skipping feed update.");
   }

@@ -3,7 +3,9 @@ import debounce from "lodash.debounce";
 import path from "path";
 
 import { loadConfig } from "../utils/config";
+import { CONFIG_FILE, STATE_PATH_NAME } from "../utils/constants";
 import { loadState, saveState } from "../utils/state";
+import { StateMode } from "../utils/types";
 
 import { syncCmd } from "./sync";
 
@@ -22,7 +24,7 @@ export async function watchCmd(debounceSec?: number) {
   await syncCmd();
 
   const state = await loadState();
-  state.currentMode = "watch";
+  state.currentMode = StateMode.WATCH;
   await saveState(state);
 
   const watcher = chokidar.watch(localDir, {
@@ -30,7 +32,7 @@ export async function watchCmd(debounceSec?: number) {
     depth: Infinity,
     ignored: (filePath: string) => {
       const name = path.basename(filePath);
-      return name === ".swarm-sync.json" || name === ".swarm-sync-state.json";
+      return name === CONFIG_FILE || name === STATE_PATH_NAME;
     },
   });
 

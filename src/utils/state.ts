@@ -1,21 +1,15 @@
 import fs from "fs/promises";
 
-import { STATE_PATH } from "./constants";
+import { State } from "../utils/types";
 
-export interface State {
-  lastFiles?: string[];
-  skipFiles?: string[];
-  lastRemoteFiles?: string[];
-  lastSync?: string;
-  currentMode?: "watch" | "schedule";
-}
+import { STATE_PATH } from "./constants";
 
 export async function loadState(): Promise<State> {
   try {
     const raw = await fs.readFile(STATE_PATH, "utf-8");
     return JSON.parse(raw) as State;
-  } catch {
-    return {};
+  } catch (err: any) {
+    throw new Error(`Failed to load state from "${STATE_PATH}": ${err.message}`);
   }
 }
 

@@ -7,7 +7,7 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
-import { DEFAULT_BEE_URL } from "../../src/utils/constants";
+import { CONFIG_FILE, DEFAULT_BEE_URL, STATE_PATH_NAME } from "../../src/utils/constants";
 import { buyStamp } from "../../src/utils/swarm";
 
 jest.setTimeout(30000);
@@ -101,10 +101,10 @@ describe("Swarm-CLI Integration Tests (init / sync / helpers)", () => {
     });
     expect(initResult.status).toBe(0);
 
-    const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
+    const cfg = fs.readJsonSync(path.join(tmpDir, CONFIG_FILE));
     expect(cfg.localDir).toBe(path.resolve(folderName));
 
-    const stateFile = path.join(tmpDir, ".swarm-sync-state.json");
+    const stateFile = path.join(tmpDir, STATE_PATH_NAME);
     expect(fs.existsSync(stateFile)).toBe(true);
     const stateObj = fs.readJsonSync(stateFile);
     expect(stateObj).toEqual({});

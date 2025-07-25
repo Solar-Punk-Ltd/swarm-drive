@@ -5,7 +5,7 @@ import path from "path";
 
 import { initCmd } from "../../src/commands/init";
 import { loadConfig } from "../../src/utils/config";
-import { DEFAULT_BEE_URL } from "../../src/utils/constants";
+import { CONFIG_FILE, DEFAULT_BEE_URL, STATE_PATH_NAME } from "../../src/utils/constants";
 import { createBeeWithBatch } from "../../src/utils/swarm";
 
 jest.mock("../../src/utils/swarm");
@@ -42,7 +42,7 @@ describe("init command", () => {
     jest.restoreAllMocks();
   });
 
-  it("creates .swarm-sync.json, clears state, and initializes postage stamp", async () => {
+  it(`creates ${CONFIG_FILE}, clears state, and initializes postage stamp`, async () => {
     // ensure the localDir exists
     const localDir = "my-folder";
     await fs.ensureDir(path.join(tmp, localDir));
@@ -63,7 +63,7 @@ describe("init command", () => {
     expect(cfg).not.toHaveProperty("volumeRef");
 
     // 2) empty state file
-    const stateFile = path.resolve(".swarm-sync-state.json");
+    const stateFile = path.resolve(STATE_PATH_NAME);
     const state = await fs.readJson(stateFile);
     expect(state).toEqual({});
 

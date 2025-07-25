@@ -119,7 +119,9 @@ describe("Swarm-CLI Integration Test: schedule", () => {
     try {
       const msg = await reader.download();
       payload = msg.payload.toUint8Array();
-    } catch {}
+    } catch (err: any) {
+      console.error("Failed to read feed:", err.message || err);
+    }
     expect(payload.byteLength).toBeGreaterThanOrEqual(32);
 
     const sdkManifestRef = new Reference(payload.slice(0, 32)).toString();
