@@ -16,9 +16,19 @@ export async function scheduleCmd(intervalSec: number): Promise<void> {
     console.error("Error during initial sync:", err.message || err);
   }
 
-  const state = await loadState();
-  state.currentMode = StateMode.SCHEDULE;
-  await saveState(state);
+  // TODO: convert to await
+  // const state = await loadState();
+  // state.currentMode = StateMode.SCHEDULE;
+  // await saveState(state);
+
+  loadState()
+    .then(state => {
+      state.currentMode = StateMode.SCHEDULE;
+      return saveState(state);
+    })
+    .catch((err: any) => {
+      console.error("Error loading or saving state:", err.message || err);
+    });
 
   setInterval(async () => {
     try {

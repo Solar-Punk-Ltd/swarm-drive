@@ -12,7 +12,9 @@ import {
 import fs from "fs/promises";
 import inquirer from "inquirer";
 
-import { DEFAULT_BEE_URL, SWARM_DRIVE_STAMP_LABEL } from "./constants";
+import { DEFAULT_BEE_URL, SWARM_DRIVE_STAMP_LABEL, SWARM_ZERO_ADDRESS } from "./constants";
+import { FeedPayloadResult } from "@ethersphere/bee-js/dist/types/modules/feed";
+import { isNotFoundError } from "./helpers";
 
 export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
   const signerKey = privateKey ?? process.env.BEE_SIGNER_KEY;
@@ -21,8 +23,8 @@ export function makeBeeWithSigner(apiUrl?: string, privateKey?: string): Bee {
   }
 
   const beeApiUrl = process.env.BEE_API ?? DEFAULT_BEE_URL;
-  if (!beeApiUrl) {
-    throw new Error("🚨 BEE_API must be set for your bee client");
+  if (!apiUrl) {
+    console.warn(`Using default Bee API URL: ${DEFAULT_BEE_URL}`);
   }
 
   return new Bee(apiUrl ?? beeApiUrl, {
@@ -144,6 +146,7 @@ export async function listRemoteFilesMap(node: MantarayNode): Promise<Record<str
   const nodesMap = node.collectAndMap();
   const out: Record<string, string> = {};
   for (const [p, ref] of Object.entries(nodesMap)) {
+    console.log("bagoy listRemoteFilesMap p, ref", p, ref);
     const key = p.startsWith("/") ? p.slice(1) : p;
     out[key] = ref.toString();
   }
@@ -161,8 +164,8 @@ export async function downloadRemoteFile(bee: Bee, node: MantarayNode, prefix: s
   return data.toUint8Array();
 }
 
-export async function loadOrCreateMantarayNode(bee: Bee, ref?: string | Reference): Promise<MantarayNode> {
-  if (!ref) {
+export async function loadOrCreateMantarayNode(bee: Bee, ref: string | Reference): Promise<MantarayNode> {
+  if (new Reference(ref).equals(SWARM_ZERO_ADDRESS)) {
     return new MantarayNode();
   }
 
@@ -181,10 +184,24 @@ export async function readDriveFeed(
   identifier: string | Uint8Array,
   address: string,
   index?: FeedIndex,
-): Promise<{ ref: Bytes; index: bigint }> {
-  const feedReader = bee.makeFeedReader(identifier, address);
-  const feedUpdate = await feedReader.downloadReference(index ? { index } : undefined);
-  return { ref: feedUpdate.reference, index: feedUpdate.feedIndex.toBigInt() };
+): Promise<FeedPayloadResult> {
+  try {
+    const feedReader = bee.makeFeedReader(identifier, address);
+    if (index !== undefined) {
+      return await feedReader.download({ index });
+    }
+    return await feedReader.download();
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return {
+        feedIndex: FeedIndex.MINUS_ONE,
+        feedIndexNext: FeedIndex.fromBigInt(0n),
+        payload: SWARM_ZERO_ADDRESS,
+      };
+    }
+
+    throw error;
+  }
 }
 
 export async function writeDriveFeed(
@@ -194,7 +211,7 @@ export async function writeDriveFeed(
   manifestRef: string,
   index?: bigint,
 ): Promise<void> {
-  const writer = bee.makeFeedWriter(topic.toUint8Array(), bee.signer!);
+  const writer = bee.makeFeedWriter(topic.toUint8Array(), bee.signer);
   await writer.uploadReference(
     batchId,
     new Reference(manifestRef),

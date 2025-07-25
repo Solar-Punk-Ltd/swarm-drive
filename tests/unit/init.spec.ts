@@ -10,8 +10,6 @@ import { createBeeWithBatch } from "../../src/utils/swarm";
 
 jest.mock("../../src/utils/swarm");
 
-const BEE_API = process.env.BEE_API ?? DEFAULT_BEE_URL;
-
 describe("init command", () => {
   const tmp = path.join(os.tmpdir(), `swarm-drive-test-${Date.now()}`);
   const cwdBefore = process.cwd();
@@ -23,8 +21,7 @@ describe("init command", () => {
     await fs.ensureDir(tmp);
     process.chdir(tmp);
 
-    // provide a valid signer key for createBeeWithBatch
-    process.env.BEE_SIGNER_KEY = "0x" + "1".repeat(64);
+    process.env.BEE_SIGNER_KEY = "1".repeat(64);
   });
 
   afterAll(async () => {
@@ -68,7 +65,7 @@ describe("init command", () => {
     expect(state).toEqual({});
 
     // 3) stamp initialization calls
-    expect(createBeeWithBatch).toHaveBeenCalledWith(BEE_API, process.env.BEE_SIGNER_KEY);
+    expect(createBeeWithBatch).toHaveBeenCalledWith(DEFAULT_BEE_URL, process.env.BEE_SIGNER_KEY);
 
     // 4) log messages for stamp creation
     expect(consoleLogSpy).toHaveBeenCalledWith("Initializing Bee client and ensuring postage stamp exists…");
@@ -78,7 +75,7 @@ describe("init command", () => {
   it("exits with error when localDir is invalid", async () => {
     const badPath = "does-not-exist";
 
-    const exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: number) => {
+    const exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: any) => {
       throw new Error(`Process exit: ${code}`);
     });
 

@@ -1,11 +1,9 @@
-import { FeedIndex, Reference } from "@ethersphere/bee-js";
 import fg from "fast-glob";
 import fs from "fs/promises";
 import path from "path";
 
 import { loadConfig } from "../utils/config";
-import { DRIVE_FEED_TOPIC } from "../utils/constants";
-import { isNotFoundError } from "../utils/helpers";
+import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants";
 import { loadState, saveState } from "../utils/state";
 import {
   createBeeWithBatch,
@@ -17,6 +15,7 @@ import {
   writeDriveFeed,
   saveMantarayNode,
 } from "../utils/swarm";
+import { Bytes, FeedIndex, MantarayNode, Reference } from "@ethersphere/bee-js";
 
 export async function syncCmd() {
   console.log("[syncCmd] Starting sync…");
@@ -30,30 +29,15 @@ export async function syncCmd() {
   console.log("[syncCmd] Loaded state:", state);
 
   const { bee, swarmDriveBatch } = await createBeeWithBatch();
-  const owner = bee.signer!.publicKey().address().toString();
+  if (!bee.signer) {
+    throw new Error("🚨 bee.signer is not set");
+  }
+  const owner = bee.signer.publicKey().address().toString();
+
   const remainingBytes = swarmDriveBatch.remainingSize.toBytes();
 
   console.log("[syncCmd] Bee ready → owner:", owner);
   console.log(`[syncCmd] Stamp remaining bytes → ${remainingBytes} bytes`);
-
-  let oldManifestRef: string | undefined;
-  let lastIndex: bigint | undefined;
-  try {
-    const { ref, index } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
-    oldManifestRef = ref.toString();
-    lastIndex = index;
-    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifestRef);
-  } catch (err: any) {
-    if (!isNotFoundError(err)) {
-      console.error("[syncCmd] Failed to read feed:", err.message || err);
-      return;
-    }
-
-    lastIndex = 0n;
-    console.log("[syncCmd] feed is empty; starting at slot 0");
-  }
-
-  const mantarayNode = await loadOrCreateMantarayNode(bee, oldManifestRef);
 
   const localFiles = await fg("**/*", { cwd: cfg.localDir, onlyFiles: true });
   console.log("[syncCmd] prevFiles:", prevFiles);
@@ -64,13 +48,20 @@ export async function syncCmd() {
     console.log("[syncCmd] skipFiles:", state.skipFiles);
   }
 
+  const { payload, feedIndex } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
+  const oldManifestRef = new Reference(payload);
+  const lastIndex = feedIndex.toBigInt();
+  if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
+    console.log("[syncCmd] feed is empty; starting at slot 0");
+  } else {
+    console.log(`[syncCmd] feed@${lastIndex} →`, oldManifestRef);
+  }
+
+  const mantarayNode = await loadOrCreateMantarayNode(bee, oldManifestRef.toString());
   let remoteMap: Record<string, string> = {};
-  if (oldManifestRef) {
-    try {
-      remoteMap = await listRemoteFilesMap(mantarayNode);
-    } catch (err: any) {
-      console.warn("[syncCmd] failed to load old manifest, assuming empty: ", err.message || err);
-    }
+  if (!oldManifestRef.equals(SWARM_ZERO_ADDRESS)) {
+    console.log("bagoy try listRemoteFilesMap");
+    remoteMap = await listRemoteFilesMap(mantarayNode);
   }
   const remoteFiles = Object.keys(remoteMap);
 
@@ -94,7 +85,7 @@ export async function syncCmd() {
   for (const f of localFiles.filter(f => remoteMap[f])) {
     const abs = path.join(cfg.localDir, f);
     const [localBuf, remoteBuf] = await Promise.all([fs.readFile(abs), downloadRemoteFile(bee, mantarayNode, f)]);
-    if (!Buffer.from(localBuf).equals(Buffer.from(remoteBuf))) {
+    if (!new Bytes(localBuf).equals(new Bytes(remoteBuf))) {
       const stat = await fs.stat(abs);
       if (stat.mtimeMs >= lastSyncTime) {
         console.log(`🔄 Local newer → will upload ${f}`);
@@ -201,7 +192,7 @@ export async function syncCmd() {
   let newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
   if (!newManifestRef) {
     console.error("[syncCmd] Failed to save mantaray node after Add; aborting sync.");
-    return;
+    throw new Error("Failed to save mantaray node after Add; aborting sync.");
   }
 
   const succeededUploads: string[] = [];
@@ -219,7 +210,7 @@ export async function syncCmd() {
   newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
   if (!newManifestRef) {
     console.error("[syncCmd] Failed to save mantaray node after Upload; aborting sync.");
-    return;
+    throw new Error("Failed to save mantaray node after Upload; aborting sync.");
   }
 
   for (const f of toDeleteRemote) {
@@ -230,7 +221,7 @@ export async function syncCmd() {
   newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
   if (!newManifestRef) {
     console.error("[syncCmd] Failed to save mantaray node after Remote Delete; aborting sync.");
-    return;
+    throw new Error("Failed to save mantaray node after Remote Delete; aborting sync.");
   }
 
   const realAdds = succeededAdds.filter(f => !toDeleteLocal.includes(f));

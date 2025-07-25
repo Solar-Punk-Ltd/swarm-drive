@@ -10,7 +10,7 @@
     "sync": "ts-node src/cli.ts sync",
     "watch": "ts-node src/cli.ts watch --debounce 300",
     "schedule": "ts-node src/cli.ts schedule",
-    "test": "jest --runInBand",
+    "test": "jest --runInBand --verbose",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "npm run lint -- --fix"
   },
@@ -22,7 +22,6 @@
     "inquirer": "^8.2.6",
     "isomorphic-git": "^1.20.0",
     "lodash.debounce": "^4.0.8",
-    "mantaray-js": "^1.0.3",
     "yargs": "^17.7.2"
   },
   "devDependencies": {

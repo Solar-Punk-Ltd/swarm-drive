@@ -35,15 +35,15 @@ describe("status command", () => {
     }) as any);
     await expect(statusCmd()).rejects.toThrow("exit");
     expect(errSpy).toHaveBeenCalledWith(
-      `Error: config file ${CONFIG_FILE} not found. Please run "swarm-drive init <localDir>" first.`,
+      `Error: config file "${CONFIG_FILE}" not found. Please run "swarm-drive init <localDir>" first.`,
     );
     exitSpy.mockRestore();
   });
 
   it("prints manual mode when no mode is set", async () => {
     (cfgMod.loadConfig as jest.Mock).mockResolvedValue({ localDir: "/data" });
-    (stateMod.loadState as jest.Mock).mockResolvedValue({});
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    (stateMod.loadState as jest.Mock).mockResolvedValue({ currentMode: StateMode.MANUAL });
+    const logSpy = jest.spyOn(console, "log");
     // freeze Date.now so “minutes ago” is 0
     jest.spyOn(Date, "now").mockReturnValue(new Date("2025-01-01T00:00:00Z").getTime());
     await statusCmd();

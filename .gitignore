@@ -9,3 +9,5 @@ node_modules/
 /*bee*.log
 /*bee*.pid
 bee-dev
+tests/**/*.log
+tests/**/*.pid

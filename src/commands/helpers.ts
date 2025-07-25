@@ -1,31 +1,33 @@
 import { FeedIndex } from "@ethersphere/bee-js";
 
 import { DRIVE_FEED_TOPIC } from "../utils/constants";
-import { isNotFoundError } from "../utils/helpers";
 import * as swarmUtils from "../utils/swarm";
 
 export async function feedGet(indexArg?: number): Promise<void> {
   const bee = swarmUtils.makeBeeWithSigner();
-  const owner = bee.signer!.publicKey().address().toString();
+  if (!bee.signer) {
+    throw new Error("🚨 bee.signer is not set");
+  }
 
-  let index: FeedIndex | undefined = undefined;
-  if (typeof indexArg === "number" && indexArg >= 0) {
+  const owner = bee.signer.publicKey().address().toString();
+
+  let index: FeedIndex | undefined;
+  if (indexArg === undefined) {
+    index = undefined;
+  } else if (typeof indexArg !== "number" || indexArg < 0) {
+    throw new Error("Invalid index argument, process exited with code: 1");
+  } else {
     index = FeedIndex.fromBigInt(BigInt(indexArg));
   }
-  const slotStr = index ? index.toBigInt() : "latest";
+  const slotStr = index !== undefined ? index.toBigInt() : "latest";
 
-  try {
-    const { ref } = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
-    console.log(`Feed@${slotStr} → ${ref}`);
-  } catch (err: any) {
-    if (isNotFoundError(err)) {
-      console.log(`Feed@${slotStr} → no feed entry yet`);
-      return;
-    }
-
-    console.error(`Failed to read feed@${slotStr}:`, err.message || err);
-    throw new Error("Process exited with code: 1");
+  const { payload, feedIndex } = await swarmUtils.readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner, index);
+  if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
+    console.log(`Feed@${slotStr} → no feed entry yet`);
+    return;
   }
+
+  console.log(`Feed@${slotStr} → ${payload.toString()}`);
 }
 
 export async function manifestLs(manifestRef: string): Promise<void> {
