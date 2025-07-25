@@ -6,8 +6,6 @@
 dist/
 data/
 node_modules/
-/*bee*.log
-/*bee*.pid
-bee-dev
 tests/**/*.log
 tests/**/*.pid
+bee-dev
