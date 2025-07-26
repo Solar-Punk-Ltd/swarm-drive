@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { BatchId, Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
+import { Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
 import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import os from "os";

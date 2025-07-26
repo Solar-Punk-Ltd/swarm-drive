@@ -7,4 +7,4 @@ export const STATE_PATH = path.resolve(process.cwd(), STATE_PATH_NAME);
 export const CONFIG_FILE = ".swarm-sync.json";
 export const SWARM_ZERO_ADDRESS = new Reference(NULL_ADDRESS);
 export const SWARM_DRIVE_STAMP_LABEL = "swarm-drive-stamp";
-export const DEFAULT_BEE_URL = "http://localhost:1633";
+export const DEFAULT_BEE_URL = "http://127.0.0.1:1633";

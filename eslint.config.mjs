@@ -78,6 +78,9 @@ export default [
         process: "readonly",
         Buffer: "readonly",
         setTimeout: "readonly",
+        setInterval: "readonly",
+        clearTimeout: "readonly",
+        clearInterval: "readonly",
         TextEncoder: "readonly",
       },
     },
@@ -131,6 +134,15 @@ export default [
       "jest/prefer-to-have-length": "warn",
       "jest/valid-expect": "error",
       "@typescript-eslint/explicit-function-return-type": "off",
+    },
+  },
+  {
+    files: ["bin/**/*.js"],
+    languageOptions: {
+      sourceType: "commonjs",
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
     },
   },
 ];

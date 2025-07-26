@@ -59,6 +59,14 @@ describe("sync command – latest remote-only implementation", () => {
     // default: no entries in the feed (slot 0 missing)
     (swarm.readDriveFeed as jest.Mock).mockResolvedValue(NOT_FOUND_FEED_RESULT);
 
+    (swarm.loadOrCreateMantarayNode as jest.Mock).mockResolvedValue({
+      selfAddress: null, // New nodes don't have selfAddress initially
+      addFork: jest.fn(),
+      removeFork: jest.fn(),
+      collectAndMap: jest.fn().mockReturnValue({}),
+      find: jest.fn(),
+    });
+
     // whenever we do makeFeedReader().download(), return our dummy ref
     dummyBee.makeFeedReader = jest.fn().mockReturnValue({
       download: jest.fn().mockResolvedValue({
@@ -82,6 +90,13 @@ describe("sync command – latest remote-only implementation", () => {
     await syncCmd();
 
     (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(FOUND_FEED_RESULT);
+    (swarm.loadOrCreateMantarayNode as jest.Mock).mockResolvedValueOnce({
+      selfAddress: DUMMY_REF, // Node with content has selfAddress
+      addFork: jest.fn(),
+      removeFork: jest.fn(),
+      collectAndMap: jest.fn().mockReturnValue({}),
+      find: jest.fn(),
+    });
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "a.txt": "refA" });
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Bytes.fromUtf8("foo").toUint8Array());
 
@@ -98,6 +113,13 @@ describe("sync command – latest remote-only implementation", () => {
 
   it("pulls a remote-only file when none locally", async () => {
     (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(FOUND_FEED_RESULT);
+    (swarm.loadOrCreateMantarayNode as jest.Mock).mockResolvedValueOnce({
+      selfAddress: DUMMY_REF, // Node with content has selfAddress
+      addFork: jest.fn(),
+      removeFork: jest.fn(),
+      collectAndMap: jest.fn().mockReturnValue({}),
+      find: jest.fn().mockReturnValue({ targetAddress: "refC" }),
+    });
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "c.txt": "refC" });
     (swarm.downloadRemoteFile as jest.Mock).mockResolvedValueOnce(Bytes.fromUtf8("dataC").toUint8Array());
     (swarm.saveMantarayNode as jest.Mock).mockResolvedValue(DUMMY_REF);
@@ -120,6 +142,13 @@ describe("sync command – latest remote-only implementation", () => {
     await syncCmd();
 
     (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(FOUND_FEED_RESULT);
+    (swarm.loadOrCreateMantarayNode as jest.Mock).mockResolvedValueOnce({
+      selfAddress: DUMMY_REF, // Node with content has selfAddress
+      addFork: jest.fn(),
+      removeFork: jest.fn(),
+      collectAndMap: jest.fn().mockReturnValue({}),
+      find: jest.fn().mockReturnValue({ targetAddress: "refB" }),
+    });
     (swarm.listRemoteFilesMap as jest.Mock).mockResolvedValueOnce({ "b.txt": "refB" });
     (swarm.downloadRemoteFile as jest.Mock)
       .mockResolvedValueOnce(Bytes.fromUtf8("old").toUint8Array())

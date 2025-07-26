@@ -6,10 +6,9 @@ import * as swarmUtils from "../../src/utils/swarm";
 jest.mock("../../src/utils/swarm");
 
 describe("helpers.ts", () => {
-  let originalEnv: NodeJS.ProcessEnv;
+  let originalEnv: typeof process.env;
   let logSpy: jest.SpyInstance;
   let errSpy: jest.SpyInstance;
-  let exitSpy: jest.SpyInstance;
 
   const DUMMY_REF = "a".repeat(64);
   const NOT_FOUND_FEED_RESULT = {
@@ -27,9 +26,6 @@ describe("helpers.ts", () => {
     originalEnv = { ...process.env };
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    exitSpy = jest.spyOn(process, "exit").mockImplementation((code?: string | number | null | undefined) => {
-      throw new Error(`Process exited with code: ${code}`);
-    });
   });
 
   afterAll(() => {

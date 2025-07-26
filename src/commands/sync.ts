@@ -1,10 +1,10 @@
-import { Bytes, FeedIndex } from "@ethersphere/bee-js";
+import { BatchId, Bee, Bytes, FeedIndex, MantarayNode } from "@ethersphere/bee-js";
 import fg from "fast-glob";
 import fs from "fs/promises";
 import path from "path";
 
 import { loadConfig } from "../utils/config";
-import { DRIVE_FEED_TOPIC, SWARM_ZERO_ADDRESS } from "../utils/constants";
+import { DRIVE_FEED_TOPIC } from "../utils/constants";
 import { loadState, saveState } from "../utils/state";
 import {
   createBeeWithBatch,
@@ -16,77 +16,119 @@ import {
   updateManifest,
   writeDriveFeed,
 } from "../utils/swarm";
+import { Config, State } from "../utils/types";
 
-export async function syncCmd(): Promise<void> {
+interface SyncContext {
+  bee: Bee;
+  owner: string;
+  remainingBytes: number;
+  batchID: BatchId;
+  localDir: string;
+  root: MantarayNode;
+  nextIndex: bigint;
+}
+
+interface FileOperations {
+  toAdd: string[];
+  toUpload: string[];
+  toPull: string[];
+  toDeleteLocal: string[];
+  toDeleteRemote: string[];
+  toSkip: string[];
+}
+
+async function initMantarayNode(bee: Bee, owner: string): Promise<{ root: MantarayNode; nextIndex: bigint }> {
+  const { reference, feedIndex, feedIndexNext } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
+  const nextIndex = feedIndexNext ? feedIndexNext.toBigInt() : 0n;
+
+  if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
+    console.log("[syncCmd] feed is empty");
+  } else {
+    console.log(`[syncCmd] feed@${feedIndex} →`, reference);
+  }
+
+  const root = await loadOrCreateMantarayNode(bee, reference.toString());
+  return { root, nextIndex };
+}
+
+async function initializeSyncContext(): Promise<{ context: SyncContext; config: Config; state: State }> {
   console.log("[syncCmd] Starting sync…");
-
-  const cfg = await loadConfig();
-  const state = await loadState();
-  const prevFiles = state.lastFiles || [];
-  const prevRemote = state.lastRemoteFiles || [];
-  const lastSyncTime = state.lastSync ? Date.parse(state.lastSync) : 0;
-
-  console.log("[syncCmd] Loaded state:", state);
 
   const { bee, swarmDriveBatch } = await createBeeWithBatch();
   if (!bee.signer) {
     throw new Error("🚨 bee.signer is not set");
   }
+
   const owner = bee.signer.publicKey().address().toString();
-
   const remainingBytes = swarmDriveBatch.remainingSize.toBytes();
-
   console.log("[syncCmd] Bee ready → owner:", owner);
   console.log(`[syncCmd] Stamp remaining bytes → ${remainingBytes} bytes`);
 
-  const localFiles = await fg("**/*", { cwd: cfg.localDir, onlyFiles: true });
-  console.log("[syncCmd] prevFiles:", prevFiles);
+  const config = await loadConfig();
+  const state = await loadState();
+
+  console.log("[syncCmd] Loaded config:", config);
+  console.log("[syncCmd] Loaded state:", state);
+
+  const { root, nextIndex } = await initMantarayNode(bee, owner);
+
+  const context: SyncContext = {
+    bee,
+    owner,
+    remainingBytes,
+    batchID: swarmDriveBatch.batchID,
+    localDir: config.localDir,
+    root,
+    nextIndex,
+  };
+
+  return { context, config, state };
+}
+
+async function getFileLists(
+  context: SyncContext,
+  state: State,
+): Promise<{
+  localFiles: string[];
+  remoteFiles: string[];
+  remoteMap: Record<string, string>;
+}> {
+  const localFiles = await fg("**/*", { cwd: context.localDir, onlyFiles: true });
   console.log("[syncCmd] localFiles:", localFiles);
 
+  let remoteMap: Record<string, string> = {};
+  if (context.root.selfAddress) {
+    remoteMap = await listRemoteFilesMap(context.root);
+  }
+  const remoteFiles = Object.keys(remoteMap);
+
+  // TODO: return skipfiles and do not update them here
+  // Update skip files to only include files that still exist locally
   if (state.skipFiles && state.skipFiles.length > 0) {
     state.skipFiles = state.skipFiles.filter(f => localFiles.includes(f));
     console.log("[syncCmd] skipFiles:", state.skipFiles);
   }
 
-  const {
-    reference: oldManifestRef,
-    feedIndex,
-    feedIndexNext,
-  } = await readDriveFeed(bee, DRIVE_FEED_TOPIC.toUint8Array(), owner);
-  const nextIndex = feedIndexNext ? feedIndexNext.toBigInt() : 0n;
-  if (FeedIndex.MINUS_ONE.equals(feedIndex)) {
-    console.log("[syncCmd] feed is empty; starting at slot 0");
-  } else {
-    console.log(`[syncCmd] feed@${feedIndex} →`, oldManifestRef);
-  }
+  return { localFiles, remoteFiles, remoteMap };
+}
 
-  const mantarayNode = await loadOrCreateMantarayNode(bee, oldManifestRef.toString());
-  let remoteMap: Record<string, string> = {};
-  if (!oldManifestRef.equals(SWARM_ZERO_ADDRESS)) {
-    remoteMap = await listRemoteFilesMap(mantarayNode);
-  }
-  const remoteFiles = Object.keys(remoteMap);
-
-  let toDeleteLocal: string[] = [];
-  if (prevFiles && prevFiles.length > 0) {
-    // todo: why set?
-    const skipped = new Set(state.skipFiles || []);
-    toDeleteLocal = prevFiles.filter(
-      f => localFiles.includes(f) && !remoteFiles.includes(f) && prevRemote.includes(f) && !skipped.has(f),
-    );
-  }
-
-  console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal);
-
-  let toAdd = localFiles.filter(f => !remoteFiles.includes(f) && !toDeleteLocal.includes(f));
-  const toDeleteRemote = remoteFiles.filter(f => prevFiles.includes(f) && !localFiles.includes(f));
-  const toPullGeneral = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f));
-
+// TODO: refactor, what is this doing?
+async function resolveFileConflicts(
+  context: SyncContext,
+  localFiles: string[],
+  remoteMap: Record<string, string>,
+  lastSyncTime: number,
+): Promise<{ toUpload: string[]; toPullConflict: string[] }> {
+  const toUpload: string[] = [];
   const toPullConflict: string[] = [];
-  let toUpload: string[] = [];
+
   for (const f of localFiles.filter(f => remoteMap[f])) {
-    const abs = path.join(cfg.localDir, f);
-    const [localBuf, remoteBuf] = await Promise.all([fs.readFile(abs), downloadRemoteFile(bee, mantarayNode, f)]);
+    const abs = path.join(context.localDir, f);
+    const [localBuf, remoteBuf] = await Promise.all([
+      fs.readFile(abs),
+      downloadRemoteFile(context.bee, context.root, f),
+    ]);
+
     if (!new Bytes(localBuf).equals(new Bytes(remoteBuf))) {
       const stat = await fs.stat(abs);
       if (stat.mtimeMs >= lastSyncTime) {
@@ -99,145 +141,257 @@ export async function syncCmd(): Promise<void> {
     }
   }
 
+  return { toUpload, toPullConflict };
+}
+
+async function calculateFileOperations(
+  context: SyncContext,
+  state: State,
+  localFiles: string[],
+  remoteFiles: string[],
+  remoteMap: Record<string, string>,
+): Promise<FileOperations> {
+  const prevFiles = state.lastFiles || [];
+  const prevRemote = state.lastRemoteFiles || [];
+  const lastSyncTime = state.lastSync ? Date.parse(state.lastSync) : 0;
+  const skipFilesSet = new Set(state.skipFiles || []);
+
+  console.log("[syncCmd] prevFiles:", prevFiles);
+
+  // Files to delete locally (were removed remotely)
+  const toDeleteLocal = prevFiles.filter(
+    f => localFiles.includes(f) && !remoteFiles.includes(f) && prevRemote.includes(f) && !skipFilesSet.has(f),
+  );
+
+  // Files to add (new local files)
+  const toAdd = localFiles.filter(f => !remoteFiles.includes(f) && !toDeleteLocal.includes(f));
+
+  // Files to delete remotely (removed locally)
+  const toDeleteRemote = remoteFiles.filter(f => prevFiles.includes(f) && !localFiles.includes(f));
+
+  // Files to pull (new remote files)
+  const toPullGeneral = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f));
+
+  // Resolve conflicts for existing files
+  const { toUpload, toPullConflict } = await resolveFileConflicts(context, localFiles, remoteMap, lastSyncTime);
+
   const toPull = Array.from(new Set([...toPullGeneral, ...toPullConflict]));
 
+  console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal);
   console.log("[syncCmd] toAdd:", toAdd);
-  console.log("[syncCmd] toDeleteLocal:", toDeleteLocal);
   console.log("[syncCmd] toDeleteRemote:", toDeleteRemote);
   console.log("[syncCmd] toPull:", toPull);
   console.log("[syncCmd] toUpload:", toUpload);
 
-  if (
-    toAdd.length === 0 &&
-    toDeleteLocal.length === 0 &&
-    toDeleteRemote.length === 0 &&
-    toPull.length === 0 &&
-    toUpload.length === 0
-  ) {
-    console.log("✅ [syncCmd] Nothing to sync.");
-    state.lastFiles = localFiles;
-    state.lastRemoteFiles = remoteFiles;
-    state.lastSync = new Date().toISOString();
-    await saveState(state);
+  return {
+    toAdd,
+    toUpload,
+    toPull,
+    toDeleteLocal,
+    toDeleteRemote,
+    toSkip: [], // Will be populated by capacity check
+  };
+}
 
-    return;
+async function checkCapacityAndOptimize(
+  context: SyncContext,
+  operations: FileOperations,
+  state: State,
+): Promise<FileOperations> {
+  const candidates = [...operations.toAdd, ...operations.toUpload];
+
+  if (candidates.length === 0) {
+    return operations;
   }
 
-  const candidates = [...toAdd, ...toUpload];
-  if (candidates.length > 0) {
-    const stats = await Promise.all(
-      candidates.map(f => fs.stat(path.join(cfg.localDir, f)).then(s => ({ path: f, size: s.size }))),
-    );
-    stats.sort((a, b) => a.size - b.size);
+  const stats = await Promise.all(
+    candidates.map(f => fs.stat(path.join(context.localDir, f)).then(s => ({ path: f, size: s.size }))),
+  );
+  stats.sort((a, b) => a.size - b.size);
 
-    const totalCandidates = stats.reduce((sum, s) => sum + s.size, 0);
-    console.log(`[syncCmd] stamp has ${remainingBytes} bytes left; total drive size needed = ${totalCandidates} bytes`);
+  const totalCandidates = stats.reduce((sum, s) => sum + s.size, 0);
+  console.log(
+    `[syncCmd] stamp has ${context.remainingBytes} bytes left; total drive size needed = ${totalCandidates} bytes`,
+  );
 
-    let used = 0n;
-    const willUpload = new Set<string>();
-    const skipped: string[] = [];
+  let used = 0n;
+  const willUpload = new Set<string>();
+  const skipped: string[] = [];
 
-    for (const { path: file, size } of stats) {
-      const sz = BigInt(size);
-      if (used + sz <= BigInt(remainingBytes)) {
-        used += sz;
-        willUpload.add(file);
-      } else {
-        skipped.push(file);
-      }
+  for (const { path: file, size } of stats) {
+    const sz = BigInt(size);
+    if (used + sz <= BigInt(context.remainingBytes)) {
+      used += sz;
+      willUpload.add(file);
+    } else {
+      skipped.push(file);
     }
-
-    if (skipped.length) {
-      console.warn(`[syncCmd] Stamp full: skipping ${skipped.length} file(s):`, skipped);
-
-      toDeleteLocal = toDeleteLocal.filter(f => !skipped.includes(f));
-      console.log("[syncCmd] Preserving capacity-skipped files from deletion:", skipped);
-
-      state.skipFiles = Array.from(new Set([...(state.skipFiles || []), ...skipped]));
-    }
-
-    toAdd = toAdd.filter(f => willUpload.has(f));
-    toUpload = toUpload.filter(f => willUpload.has(f));
   }
 
-  for (const f of toDeleteLocal) {
+  if (skipped.length > 0) {
+    console.warn(`[syncCmd] Stamp full: skipping ${skipped.length} file(s):`, skipped);
+    console.log("[syncCmd] Preserving capacity-skipped files from deletion:", skipped);
+
+    // Update skip files in state
+    state.skipFiles = Array.from(new Set([...(state.skipFiles || []), ...skipped]));
+
+    // Filter operations to exclude skipped files
+    operations.toDeleteLocal = operations.toDeleteLocal.filter(f => !skipped.includes(f));
+    operations.toAdd = operations.toAdd.filter(f => willUpload.has(f));
+    operations.toUpload = operations.toUpload.filter(f => willUpload.has(f));
+    operations.toSkip = skipped;
+  }
+
+  return operations;
+}
+
+function hasOperations(operations: FileOperations): boolean {
+  return (
+    operations.toAdd.length > 0 ||
+    operations.toDeleteLocal.length > 0 ||
+    operations.toDeleteRemote.length > 0 ||
+    operations.toPull.length > 0 ||
+    operations.toUpload.length > 0
+  );
+}
+
+async function executeLocalDeletions(
+  context: SyncContext,
+  operations: FileOperations,
+  localFiles: string[],
+): Promise<void> {
+  for (const f of operations.toDeleteLocal) {
     console.log("🗑️  Remote deleted → removing local file", f);
-    await fs.rm(path.join(cfg.localDir, f), { force: true });
-    localFiles.splice(localFiles.indexOf(f), 1);
+    await fs.rm(path.join(context.localDir, f), { force: true });
+    const index = localFiles.indexOf(f);
+    if (index > -1) {
+      localFiles.splice(index, 1);
+    }
   }
+}
 
-  for (const f of toPull) {
-    if (toDeleteLocal.includes(f)) continue;
+async function executeFilePulls(context: SyncContext, operations: FileOperations, localFiles: string[]): Promise<void> {
+  for (const f of operations.toPull) {
+    if (operations.toDeleteLocal.includes(f)) continue;
 
     console.log("⤵️  Pull →", f);
-    const data = await downloadRemoteFile(bee, mantarayNode, f);
-    const dst = path.join(cfg.localDir, f);
+    const data = await downloadRemoteFile(context.bee, context.root, f);
+    const dst = path.join(context.localDir, f);
 
     await fs.mkdir(path.dirname(dst), { recursive: true });
     await fs.writeFile(dst, data);
 
-    if (!localFiles.includes(f)) localFiles.push(f);
+    if (!localFiles.includes(f)) {
+      localFiles.push(f);
+    }
   }
+}
 
+async function executeFileAdditions(context: SyncContext, operations: FileOperations): Promise<string[]> {
   const succeededAdds: string[] = [];
-  for (const f of toAdd) {
+
+  for (const f of operations.toAdd) {
     console.log("➕ Add →", f);
     try {
-      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, path.join(cfg.localDir, f), f, false);
-
+      await updateManifest(context.bee, context.batchID, context.root, path.join(context.localDir, f), f, false);
       succeededAdds.push(f);
     } catch (err: any) {
       console.error(`Error uploading "${f}":`, err.message);
     }
   }
 
-  let newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
-  if (!newManifestRef) {
-    console.error("[syncCmd] Failed to save mantaray node after Add; aborting sync.");
-    throw new Error("Failed to save mantaray node after Add; aborting sync.");
-  }
+  return succeededAdds;
+}
 
+async function executeFileUploads(context: SyncContext, operations: FileOperations): Promise<string[]> {
   const succeededUploads: string[] = [];
-  for (const f of toUpload) {
+
+  for (const f of operations.toUpload) {
     console.log("⬆️  Upload →", f);
     try {
-      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, "", f, true);
-      await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, path.join(cfg.localDir, f), f, false);
+      // Remove old version first
+      await updateManifest(context.bee, context.batchID, context.root, "", f, true);
+      // Add new version
+      await updateManifest(context.bee, context.batchID, context.root, path.join(context.localDir, f), f, false);
       succeededUploads.push(f);
     } catch (err: any) {
       console.error(`Error updating "${f}":`, err.message);
     }
   }
 
-  newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
-  if (!newManifestRef) {
-    console.error("[syncCmd] Failed to save mantaray node after Upload; aborting sync.");
-    throw new Error("Failed to save mantaray node after Upload; aborting sync.");
-  }
+  return succeededUploads;
+}
 
-  for (const f of toDeleteRemote) {
+async function executeRemoteDeletions(context: SyncContext, operations: FileOperations): Promise<void> {
+  for (const f of operations.toDeleteRemote) {
     console.log("🗑️  Delete →", f);
-    await updateManifest(bee, swarmDriveBatch.batchID, mantarayNode, "", f, true);
+    await updateManifest(context.bee, context.batchID, context.root, "", f, true);
   }
+}
 
-  newManifestRef = await saveMantarayNode(bee, mantarayNode, swarmDriveBatch.batchID);
+async function saveManifestAndUpdateFeed(
+  context: SyncContext,
+  succeededAdds: string[],
+  succeededUploads: string[],
+  operations: FileOperations,
+): Promise<string | undefined> {
+  const newManifestRef = await saveMantarayNode(context.bee, context.root, context.batchID);
   if (!newManifestRef) {
-    console.error("[syncCmd] Failed to save mantaray node after Remote Delete; aborting sync.");
-    throw new Error("Failed to save mantaray node after Remote Delete; aborting sync.");
+    console.error("[syncCmd] Failed to save mantaray node; aborting sync.");
+    throw new Error("Failed to save mantaray node; aborting sync.");
   }
 
-  const realAdds = succeededAdds.filter(f => !toDeleteLocal.includes(f));
-  const didChange = realAdds.length > 0 || succeededUploads.length > 0 || toDeleteRemote.length > 0;
+  const realAdds = succeededAdds.filter(f => !operations.toDeleteLocal.includes(f));
+  const didChange = realAdds.length > 0 || succeededUploads.length > 0 || operations.toDeleteRemote.length > 0;
+
   if (didChange) {
-    console.log(`[syncCmd] Writing feed@${nextIndex} →`, newManifestRef);
-    await writeDriveFeed(bee, DRIVE_FEED_TOPIC, swarmDriveBatch.batchID, newManifestRef, nextIndex);
+    console.log(`[syncCmd] Writing feed@${context.nextIndex} →`, newManifestRef);
+    await writeDriveFeed(context.bee, DRIVE_FEED_TOPIC, context.batchID, newManifestRef, context.nextIndex);
   } else {
     console.log("✅ [syncCmd] No uploads to feed; skipping feed update.");
   }
 
-  state.lastRemoteFiles = remoteFiles;
+  return newManifestRef;
+}
 
+async function updateFinalState(state: State, localFiles: string[], remoteFiles: string[]): Promise<void> {
   state.lastFiles = localFiles;
+  state.lastRemoteFiles = remoteFiles;
   state.lastSync = new Date().toISOString();
   await saveState(state);
+}
+
+export async function syncCmd(): Promise<void> {
+  const { context, state } = await initializeSyncContext();
+  const { localFiles, remoteFiles, remoteMap } = await getFileLists(context, state);
+
+  let operations = await calculateFileOperations(context, state, localFiles, remoteFiles, remoteMap);
+  operations = await checkCapacityAndOptimize(context, operations, state);
+
+  if (!hasOperations(operations)) {
+    console.log("✅ [syncCmd] Nothing to sync.");
+    await updateFinalState(state, localFiles, remoteFiles);
+    return;
+  }
+
+  // 1. Delete local files that were removed remotely
+  await executeLocalDeletions(context, operations, localFiles);
+
+  // 2. Pull files from remote
+  await executeFilePulls(context, operations, localFiles);
+
+  // 3. Add new files to remote
+  const succeededAdds = await executeFileAdditions(context, operations);
+
+  // 4. Upload modified files to remote
+  const succeededUploads = await executeFileUploads(context, operations);
+
+  // 5. Delete files from remote
+  await executeRemoteDeletions(context, operations);
+
+  // 6. Save manifest and update feed
+  await saveManifestAndUpdateFeed(context, succeededAdds, succeededUploads, operations);
+
+  // 7. Update and save final state
+  await updateFinalState(state, localFiles, remoteFiles);
 }
