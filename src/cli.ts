@@ -1,32 +1,26 @@
-import yargs from "yargs"
-import { hideBin } from "yargs/helpers"
-import dotenv from "dotenv"
-dotenv.config()
+import dotenv from "dotenv";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
+dotenv.config();
 
-import { initCmd } from "./commands/init"
-import { syncCmd } from "./commands/sync"
-import { watchCmd } from "./commands/watch"
-import { scheduleCmd } from "./commands/schedule"
+import { configGetCmd, configSetCmd } from "./commands/config";
+import { feedGet, listStamps, manifestLs } from "./commands/helpers";
+import { initCmd } from "./commands/init";
+import { scheduleCmd } from "./commands/schedule";
 import { statusCmd } from "./commands/status";
-import { configSetCmd, configGetCmd } from "./commands/config";
-
-import {
-  listStamps,
-  feedGet,
-  feedLs,
-  manifestLs,
-} from "./commands/helpers"
+import { syncCmd } from "./commands/sync";
+import { watchCmd } from "./commands/watch";
 
 yargs(hideBin(process.argv))
   .command({
     command: "init <localDir>",
     describe: "Initialize Swarm Drive",
-    builder: (y) =>
+    builder: y =>
       y.positional("localDir", {
         type: "string",
         describe: "Local folder path",
       }),
-    handler: (argv) => initCmd(argv.localDir as string),
+    handler: argv => initCmd(argv.localDir as string),
   })
   .command({
     command: "sync",
@@ -36,22 +30,22 @@ yargs(hideBin(process.argv))
   .command({
     command: "watch [--debounce s]",
     describe: "Watch local folder for changes and sync",
-    builder: (y) =>
+    builder: y =>
       y.option("debounce", {
         type: "number",
         describe: "Debounce interval (s) — overrides config.watchIntervalSeconds",
       }),
-    handler: (argv) => watchCmd(argv.debounce as number | undefined),
+    handler: argv => watchCmd(argv.debounce as number | undefined),
   })
   .command({
     command: "schedule <intervalSec>",
     describe: "Run sync every <intervalSec> seconds",
-    builder: (y) =>
+    builder: y =>
       y.positional("intervalSec", {
-          type: "number",
-          describe: "Interval in seconds (e.g. 60 for 1 minute)",
-        }),
-    handler: (argv) => scheduleCmd(argv.intervalSec as number),
+        type: "number",
+        describe: "Interval in seconds (e.g. 60 for 1 minute)",
+      }),
+    handler: argv => scheduleCmd(argv.intervalSec as number),
   })
   .command({
     command: "stamp-list",
@@ -64,12 +58,12 @@ yargs(hideBin(process.argv))
     builder: {
       index: { type: "number", describe: "Optional feed index" },
     },
-    handler: (argv) => feedGet(argv.index as number | undefined),
+    handler: argv => feedGet(argv.index as number | undefined),
   })
   .command({
     command: "feed-ls",
     describe: "Alias for feed-get latest",
-    handler: () => feedLs(),
+    handler: () => feedGet(),
   })
   .command({
     command: "manifest-ls <manifestRef>",
@@ -80,7 +74,7 @@ yargs(hideBin(process.argv))
         describe: "The 32-byte Swarm manifest hash",
       },
     },
-    handler: (argv) => manifestLs(argv.manifestRef as string),
+    handler: argv => manifestLs(argv.manifestRef as string),
   })
   .command({
     command: "status",
@@ -90,7 +84,7 @@ yargs(hideBin(process.argv))
   .command({
     command: "config <action> [key] [value]",
     describe: "Get or set configuration",
-    builder: (y) =>
+    builder: y =>
       y
         .positional("action", {
           choices: ["get", "set"],
@@ -104,7 +98,7 @@ yargs(hideBin(process.argv))
           type: "string",
           describe: "New value (only required for set)",
         }),
-    handler: async (argv) => {
+    handler: async argv => {
       if (argv.action === "get") {
         await configGetCmd(argv.key!);
       } else {
@@ -119,7 +113,7 @@ yargs(hideBin(process.argv))
   .demandCommand(1, "You need to specify a command")
   .help()
   .parseAsync()
-  .catch((err) => {
-    console.error(err)
-    process.exit(1)
-  })
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  });

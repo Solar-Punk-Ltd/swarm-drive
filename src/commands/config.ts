@@ -1,11 +1,12 @@
 import { loadConfig, saveConfig } from "../utils/config";
-import type { Config } from "../types";
+import type { Config } from "../utils/types";
 
 export async function configSetCmd(key: string, value: string): Promise<void> {
   const cfg = (await loadConfig()) as Config & { lastSync?: string };
 
   switch (key) {
     case "localDir":
+      // TODO: validate localDir path?
       // any string is fine
       cfg.localDir = value;
       await saveConfig(cfg);

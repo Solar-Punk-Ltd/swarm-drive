@@ -2,10 +2,10 @@
 .swarm-sync.json
 .env
 .ENV
+.vscode/
 dist/
 data/
 node_modules/
 tests/**/*.log
 tests/**/*.pid
 bee-dev
-.vscode/
