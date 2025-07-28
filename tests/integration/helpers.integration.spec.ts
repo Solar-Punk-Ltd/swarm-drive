@@ -2,19 +2,18 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import { Bee, PrivateKey, Reference } from "@ethersphere/bee-js";
 import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
-import { Bee, PrivateKey } from "@ethersphere/bee-js";
-import { buyStamp } from "./helpers";
+import { DEFAULT_BEE_URL, SWARM_DRIVE_STAMP_LABEL } from "../../src/utils/constants";
+import { buyStamp } from "../../src/utils/swarm";
 
 jest.setTimeout(30000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
-const BEE_API = process.env.BEE_API ?? "http://localhost:1633"
-const POSTAGE_LABEL = "swarm-drive-stamp";
 
 describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)", () => {
   let tmpDir: string;
@@ -22,17 +21,14 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
   let signerKey: string;
 
   beforeAll(async () => {
-    const FALLBACK_KEY =
-      "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-    signerKey = process.env.BEE_SIGNER_KEY?.startsWith("0x")
-      ? process.env.BEE_SIGNER_KEY!
-      : FALLBACK_KEY;
+    const FALLBACK_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    signerKey = process.env.BEE_SIGNER_KEY?.startsWith("0x") ? process.env.BEE_SIGNER_KEY! : FALLBACK_KEY;
 
-    bee = new Bee(BEE_API, { signer: new PrivateKey(signerKey) });
-    const allBatches = await bee.getAllPostageBatch();
-    const existing = allBatches.find((b) => b.label === POSTAGE_LABEL);
+    bee = new Bee(process.env.BEE_API ?? DEFAULT_BEE_URL, { signer: new PrivateKey(signerKey) });
+    const allBatches = await bee.getPostageBatches();
+    const existing = allBatches.find(b => b.label === SWARM_DRIVE_STAMP_LABEL);
     if (!existing) {
-      await buyStamp(bee, "10000000000000000000000", 18, POSTAGE_LABEL);
+      await buyStamp(bee, "10000000000000000000000", 18, SWARM_DRIVE_STAMP_LABEL);
     }
   });
 
@@ -48,15 +44,12 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
   });
 
   function runCli(args: string[]): string {
-    const result = spawnSync(
-      process.execPath,
-      [CLI_PATH, ...args],
-      {
-        cwd: tmpDir,
-        env: { ...process.env, BEE_SIGNER_KEY: signerKey },
-        encoding: "utf-8",
-      }
-    );
+    const result = spawnSync(process.execPath, [CLI_PATH, ...args], {
+      cwd: tmpDir,
+      env: { ...process.env, BEE_SIGNER_KEY: signerKey },
+      encoding: "utf-8",
+    });
+
     if (result.status !== 0) {
       const stderr = (result.stderr || "").trim();
       throw new Error(`"${args.join(" ")}" failed:\n${stderr}`);
@@ -64,7 +57,7 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
     return (result.stdout || "").trim();
   }
 
-  it("`feed-get 0` and `feed-ls` both return the same manifest reference", async () => {
+  it("`feed-get` and `feed-ls` both return the same manifest reference", async () => {
     const dataDir = "docs";
     fs.ensureDirSync(path.join(tmpDir, dataDir));
     runCli(["init", dataDir]);
@@ -72,19 +65,19 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
     await fs.writeFile(path.join(tmpDir, dataDir, "x.md"), "X", "utf-8");
     runCli(["sync"]);
 
-    await new Promise((r) => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1000));
 
     let ref0 = "";
     for (let i = 0; i < 5; i++) {
-      const out = runCli(["feed-get", "0"]);
+      const out = runCli(["feed-get"]);
       const parts = out.split(/\s+/);
-      if (parts.length >= 3 && /^[0-9a-fA-F]{64}$/.test(parts[2])) {
+      if (parts.length >= 3 && new Reference(parts[2])) {
         ref0 = parts[2];
         break;
       }
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise(r => setTimeout(r, 500));
     }
-    expect(ref0).toMatch(/^[0-9a-fA-F]{64}$/);
+    expect(new Reference(ref0)).toBeDefined();
 
     const ls = runCli(["feed-ls"]).split(/\s+/);
     expect(ls[2]).toBe(ref0);
@@ -98,15 +91,11 @@ describe("Swarm-CLI Integration Test: helpers (feed-get, feed-ls, manifest-ls)",
     await fs.writeFile(path.join(tmpDir, dataDir, "foo.txt"), "foo", "utf-8");
     runCli(["sync"]);
 
-    // give a moment for the feed to be published
-    await new Promise((r) => setTimeout(r, 2500));
-
-    // explicitly pull slot 1 (where foo.txt was pushed)
-    const out1 = runCli(["feed-get", "1"]);
+    const out1 = runCli(["feed-get"]);
     const parts1 = out1.split(/\s+/);
     expect(parts1.length).toBeGreaterThanOrEqual(3);
     const manifestRef = parts1[2].trim();
-    expect(manifestRef).toMatch(/^[0-9a-fA-F]{64}$/);
+    expect(new Reference(manifestRef)).toBeDefined();
 
     const finalLs = runCli(["manifest-ls", manifestRef]);
     expect(finalLs).toMatch(/foo\.txt/);

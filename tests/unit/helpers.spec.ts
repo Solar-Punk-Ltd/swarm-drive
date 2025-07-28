@@ -1,59 +1,31 @@
-jest.mock("@ethersphere/bee-js", () => {
-  const ZERO_BUF = Buffer.alloc(32, 0);
+import { Bee, Bytes, FeedIndex } from "@ethersphere/bee-js";
 
-  return {
-    Bee: jest.fn(),
-    PrivateKey: jest.fn(),
-    Topic: class {
-      constructor(_buf: Uint8Array) {}
-      toUint8Array() {
-        return Buffer.alloc(32, 0);
-      }
-    },
-    Reference: class {
-      private buf: Buffer;
-      constructor(address: any) {
-        this.buf = Buffer.isBuffer(address) ? address : ZERO_BUF;
-      }
-      equals(other: any) {
-        const otherBuf = Buffer.isBuffer(other)
-          ? other
-          : other instanceof (this.constructor as any)
-          ? (other as any).buf
-          : null;
-        return Buffer.isBuffer(otherBuf) && this.buf.equals(otherBuf);
-      }
-      toString() {
-        return "00".repeat(32);
-      }
-    },
-    NULL_ADDRESS: ZERO_BUF,
-    FeedIndex: {
-      fromBigInt: (_: bigint) => ({}),
-    },
-  };
-});
-
-import { feedGet, feedLs, manifestLs, listStamps } from "../../src/commands/helpers";
+import { feedGet, listStamps, manifestLs } from "../../src/commands/helpers";
+import { SWARM_ZERO_ADDRESS } from "../../src/utils/constants";
 import * as swarmUtils from "../../src/utils/swarm";
-import { Bee } from "@ethersphere/bee-js";
 jest.mock("../../src/utils/swarm");
 
 describe("helpers.ts", () => {
-  let originalEnv: NodeJS.ProcessEnv;
+  let originalEnv: typeof process.env;
   let logSpy: jest.SpyInstance;
   let errSpy: jest.SpyInstance;
-  let exitSpy: jest.SpyInstance;
+
+  const DUMMY_REF = "a".repeat(64);
+  const NOT_FOUND_FEED_RESULT = {
+    feedIndex: FeedIndex.MINUS_ONE,
+    feedIndexNext: FeedIndex.fromBigInt(0n),
+    reference: SWARM_ZERO_ADDRESS,
+  };
+  const FOUND_FEED_RESULT = {
+    feedIndex: FeedIndex.fromBigInt(0n),
+    feedIndexNext: FeedIndex.fromBigInt(1n),
+    reference: new Bytes(DUMMY_REF),
+  };
 
   beforeAll(() => {
     originalEnv = { ...process.env };
     logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
     errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
-    exitSpy = jest
-      .spyOn(process, "exit")
-      .mockImplementation((code?: number) => {
-        throw new Error(`Process exited with code: ${code}`);
-      });
   });
 
   afterAll(() => {
@@ -61,178 +33,56 @@ describe("helpers.ts", () => {
     jest.restoreAllMocks();
   });
 
-  describe("makeBareBeeClient (indirectly via feedGet)", () => {
-    it("throws if BEE_SIGNER_KEY is missing", async () => {
-      delete process.env.BEE_SIGNER_KEY;
-      await expect(feedGet()).rejects.toThrow(/must be set/);
-    });
-
-    it("throws if BEE_SIGNER_KEY does not start with 0x", async () => {
-      process.env.BEE_SIGNER_KEY = "abcd";
-      await expect(feedGet()).rejects.toThrow(/must start with 0x/);
-    });
-  });
-
   describe("feedGet(indexArg)", () => {
-    const dummySignerKey = "0x" + "1".repeat(64);
+    const dummySignerKey = "1".repeat(64);
 
-  beforeEach(() => {
-    process.env.BEE_SIGNER_KEY = dummySignerKey;
-    (swarmUtils.readDriveFeed as jest.Mock).mockReset();
-    (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
-    (swarmUtils.makeBareBeeClient as jest.Mock).mockReset();
-  });
-
-    it("prints hex when payload is exactly 32 bytes (non-zero)", async () => {
-      const fakePayload = Buffer.from("a".repeat(64), "hex");
-      const fakeReader = {
-        download: jest.fn().mockResolvedValue({
-          payload: { toUint8Array: () => fakePayload },
-        }),
-      };
-      const fakeBeeInstance = {
+    beforeEach(() => {
+      process.env.BEE_SIGNER_KEY = dummySignerKey;
+      (swarmUtils.listRemoteFilesMap as jest.Mock).mockReset();
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue({
         signer: {
           publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
         },
-        makeFeedReader: jest.fn().mockReturnValue(fakeReader),
-      } as any as Bee;
-
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      await expect(feedGet(5)).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringMatching(/^Feed@5 → [0-9a-f]{64}$/)
-      );
+      } as any as Bee);
     });
 
-    it("prints zero-address when payload is 32 bytes of zero", async () => {
-      const zeroBuf = Buffer.alloc(32, 0);
-      const fakeReader = {
-        download: jest.fn().mockResolvedValue({
-          payload: { toUint8Array: () => zeroBuf },
-        }),
-      };
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-        makeFeedReader: jest.fn().mockReturnValue(fakeReader),
-      } as any as Bee;
-
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      await expect(feedGet(3)).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith("Feed@3 → zero address (empty)");
+    it("prints no feed entry yet when data is not found", async () => {
+      (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(NOT_FOUND_FEED_RESULT);
+      await feedGet(5);
+      expect(logSpy).toHaveBeenCalledWith(`Feed@${5} → no feed entry yet`);
     });
 
-    it("prints length-mismatch if payload is not 32 bytes", async () => {
-      const shortBuf = Buffer.from("hello");
-      const fakeReader = {
-        download: jest.fn().mockResolvedValue({
-          payload: { toUint8Array: () => shortBuf },
-        }),
-      };
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-        makeFeedReader: jest.fn().mockReturnValue(fakeReader),
-      } as any as Bee;
-
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      await expect(feedGet(2)).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        "Feed@2 → payload length 5, not a 32-byte reference."
-      );
+    it("prints data ref when found", async () => {
+      (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(FOUND_FEED_RESULT);
+      await feedGet(5);
+      expect(logSpy).toHaveBeenCalledWith(`Feed@${5} → ${FOUND_FEED_RESULT.reference.toString()}`);
     });
 
-    it("calls process.exit(1) on download error", async () => {
-      const fakeReader = {
-        download: jest.fn().mockRejectedValue(new Error("download failed")),
-      };
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-        makeFeedReader: jest.fn().mockReturnValue(fakeReader),
-      } as any as Bee;
-
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      await expect(feedGet(1)).rejects.toThrow("Process exited with code: 1");
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to read feed@1:",
-        "download failed"
-      );
+    it("throws on invalid index error", async () => {
+      await expect(feedGet("random" as any)).rejects.toThrow("Invalid index argument, process exited with code: 1");
     });
 
     it("prints latest when no indexArg and readDriveFeed returns ref", async () => {
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-      } as any as Bee;
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue("abcdef");
-      await expect(feedGet()).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith("Feed@latest → abcdef");
-    });
-
-    it("prints zero-address when no indexArg and readDriveFeed returns undefined", async () => {
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-      } as any as Bee;
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(undefined);
-      await expect(feedGet()).resolves.toBeUndefined();
-      expect(logSpy).toHaveBeenCalledWith(
-        "Feed@latest → zero address (empty) or no feed entry yet"
-      );
+      (swarmUtils.readDriveFeed as jest.Mock).mockResolvedValue(FOUND_FEED_RESULT);
+      await feedGet();
+      expect(logSpy).toHaveBeenCalledWith(`Feed@latest → ${FOUND_FEED_RESULT.reference.toString()}`);
     });
 
     it("exits on readDriveFeed error", async () => {
-      const fakeBeeInstance = {
-        signer: {
-          publicKey: () => ({ address: () => ({ toString: () => "ownerAddr" }) }),
-        },
-      } as any as Bee;
-      (Bee as jest.Mock).mockImplementation(() => fakeBeeInstance);
-
-      (swarmUtils.readDriveFeed as jest.Mock).mockRejectedValue(
-        new Error("oops")
-      );
-      await expect(feedGet()).rejects.toThrow("Process exited with code: 1");
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to read feed@latest:",
-        "oops"
-      );
+      (swarmUtils.readDriveFeed as jest.Mock).mockRejectedValue(new Error("oops"));
+      await expect(feedGet()).rejects.toThrow("oops");
     });
   });
 
-  describe("feedLs()", () => {
-    it("just calls feedGet()", async () => {
-      // we spy on feedGet, since feedLs should delegate to it
-      const helper = require("../../src/commands/helpers");
-      const spy = jest.spyOn(helper, "feedGet").mockResolvedValue(undefined);
-      // call via the module so our spy is applied
-      await helper.feedLs();
-      expect(spy).toHaveBeenCalledWith(undefined);
-    });
-  });
   describe("manifestLs()", () => {
     beforeEach(() => {
-      process.env.BEE_SIGNER_KEY = "0x" + "2".repeat(64);
+      process.env.BEE_SIGNER_KEY = "2".repeat(64);
       jest.resetAllMocks();
     });
 
     it("prints empty when remote manifest has no files", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({});
 
       await expect(manifestLs("someRef")).resolves.toBeUndefined();
@@ -241,7 +91,7 @@ describe("helpers.ts", () => {
 
     it("prints list of files when remote manifest has entries", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
       (swarmUtils.listRemoteFilesMap as jest.Mock).mockResolvedValue({
         "a.txt": "refA",
         "b.txt": "refB",
@@ -255,25 +105,18 @@ describe("helpers.ts", () => {
 
     it("exits on listRemoteFilesMap error", async () => {
       const fakeBee = {} as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
-      (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(
-        new Error("fail")
-      );
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.listRemoteFilesMap as jest.Mock).mockRejectedValue(new Error("fail"));
 
-      await expect(manifestLs("badRef")).rejects.toThrow(
-        "Process exited with code: 1"
-      );
-      expect(errSpy).toHaveBeenCalledWith(
-        "Failed to list manifest badRef:",
-        "fail"
-      );
+      await expect(manifestLs("badRef")).rejects.toThrow("Process exited with code: 1");
+      expect(errSpy).toHaveBeenCalledWith("Failed to list manifest badRef:", "fail");
     });
   });
 
   describe("listStamps()", () => {
     it("prints no stamps if none exist", async () => {
-      const fakeBee = { getAllPostageBatch: jest.fn().mockResolvedValue([]) } as any;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      const fakeBee = { getPostageBatches: jest.fn().mockResolvedValue([]) } as any;
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
 
       await expect(listStamps()).resolves.toBeUndefined();
       expect(logSpy).toHaveBeenCalledWith("No postage batches found on this node.");
@@ -287,9 +130,9 @@ describe("helpers.ts", () => {
         label: "lbl",
       };
       const fakeBee = {
-        getAllPostageBatch: jest.fn().mockResolvedValue([fakeBatch]),
+        getPostageBatches: jest.fn().mockResolvedValue([fakeBatch]),
       } as any as Bee;
-      (swarmUtils.makeBareBeeClient as jest.Mock).mockReturnValue(fakeBee);
+      (swarmUtils.makeBeeWithSigner as jest.Mock).mockReturnValue(fakeBee);
 
       await expect(listStamps()).resolves.toBeUndefined();
       expect(logSpy).toHaveBeenCalledWith("🗃️  Postage batches:");

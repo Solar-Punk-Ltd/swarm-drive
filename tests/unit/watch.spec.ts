@@ -2,10 +2,11 @@ jest.mock("chokidar");
 jest.mock("../../src/commands/sync");
 jest.mock("../../src/utils/config");
 
-import { EventEmitter } from "events";
 import chokidar from "chokidar";
-import { watchCmd } from "../../src/commands/watch";
+import { EventEmitter } from "events";
+
 import { syncCmd } from "../../src/commands/sync";
+import { watchCmd } from "../../src/commands/watch";
 import { loadConfig } from "../../src/utils/config";
 
 describe("watchCmd", () => {
@@ -61,9 +62,7 @@ describe("watchCmd", () => {
   });
 
   it("logs an error when the watcher emits an error event", async () => {
-    const consoleErrorSpy = jest
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     await watchCmd(0.3);
 
     const error = new Error("Watcher failed");

@@ -1,25 +1,21 @@
-import fs from "fs/promises"
-import path from "path"
+import fs from "fs/promises";
 
-export interface State {
-  lastFiles?: string[]
-  skipFiles?: string[]
-  lastRemoteFiles?: string[]
-  lastSync?: string
-  currentMode?: "watch" | "schedule"
-}
+import { State, StateMode } from "../utils/types";
 
-const STATE_PATH = path.resolve(process.cwd(), ".swarm-sync-state.json")
+import { STATE_PATH } from "./constants";
 
 export async function loadState(): Promise<State> {
   try {
-    const raw = await fs.readFile(STATE_PATH, "utf-8")
-    return JSON.parse(raw) as State
-  } catch {
-    return {}
+    const raw = await fs.readFile(STATE_PATH, "utf-8");
+    return JSON.parse(raw) as State;
+  } catch (err: any) {
+    console.warn(`Failed to load state from "${STATE_PATH}": ${err.message}`);
+    return {
+      currentMode: StateMode.MANUAL,
+    };
   }
 }
 
 export async function saveState(state: State): Promise<void> {
-  await fs.writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf-8")
+  await fs.writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf-8");
 }

@@ -6,6 +6,8 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 
+import { CONFIG_FILE } from "../../src/utils/constants";
+
 jest.setTimeout(20000);
 
 const CLI_PATH = path.resolve(__dirname, "../../dist/cli.js");
@@ -19,7 +21,7 @@ describe("Swarm-CLI Integration Tests (config)", () => {
     await fs.ensureDir(tmpDir);
     process.chdir(tmpDir);
     // ensure no existing config
-    await fs.remove(path.join(tmpDir, ".swarm-sync.json"));
+    await fs.remove(path.join(tmpDir, CONFIG_FILE));
   });
 
   afterEach(async () => {
@@ -28,11 +30,7 @@ describe("Swarm-CLI Integration Tests (config)", () => {
   });
 
   function runCli(args: string[]) {
-    return spawnSync(
-      process.execPath,
-      [CLI_PATH, ...args],
-      { cwd: tmpDir, encoding: "utf8" }
-    );
+    return spawnSync(process.execPath, [CLI_PATH, ...args], { cwd: tmpDir, encoding: "utf8" });
   }
 
   it("set and get localDir", () => {
@@ -42,7 +40,7 @@ describe("Swarm-CLI Integration Tests (config)", () => {
     expect(r1.status).toBe(0);
     expect(r1.stdout).toMatch(new RegExp(`localDir = ${folder}`));
 
-    const cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
+    const cfg = fs.readJsonSync(path.join(tmpDir, CONFIG_FILE));
     expect(cfg.localDir).toBe(folder);
 
     const r2 = runCli(["config", "get", "localDir"]);
@@ -54,13 +52,13 @@ describe("Swarm-CLI Integration Tests (config)", () => {
     let r = runCli(["config", "set", "watchIntervalSeconds", "42"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/watchIntervalSeconds = 42/);
-    let cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
+    let cfg = fs.readJsonSync(path.join(tmpDir, CONFIG_FILE));
     expect(cfg.watchIntervalSeconds).toBe(42);
 
     r = runCli(["config", "set", "scheduleIntervalSeconds", "7"]);
     expect(r.status).toBe(0);
     expect(r.stdout).toMatch(/scheduleIntervalSeconds = 7/);
-    cfg = fs.readJsonSync(path.join(tmpDir, ".swarm-sync.json"));
+    cfg = fs.readJsonSync(path.join(tmpDir, CONFIG_FILE));
     expect(cfg.scheduleIntervalSeconds).toBe(7);
 
     r = runCli(["config", "get", "watchIntervalSeconds"]);
