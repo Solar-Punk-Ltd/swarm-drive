@@ -30,7 +30,7 @@ interface SyncContext {
 
 interface FileOperations {
   toAdd: string[];
-  toUpload: string[];
+  toUpdate: string[];
   toPull: string[];
   toDeleteLocal: string[];
   toDeleteRemote: string[];
@@ -90,17 +90,15 @@ async function getFileLists(
   state: State,
 ): Promise<{
   localFiles: string[];
-  remoteFiles: string[];
-  remoteMap: Record<string, string>;
+  remoteFilePathToHashMap: Record<string, string>;
 }> {
   const localFiles = await fg("**/*", { cwd: context.localDir, onlyFiles: true });
   console.log("[syncCmd] localFiles:", localFiles);
 
-  let remoteMap: Record<string, string> = {};
+  let remoteFilePathToHashMap: Record<string, string> = {};
   if (context.root.selfAddress) {
-    remoteMap = await listRemoteFilesMap(context.root);
+    remoteFilePathToHashMap = await listRemoteFilesMap(context.root);
   }
-  const remoteFiles = Object.keys(remoteMap);
 
   // TODO: return skipfiles and do not update them here
   // Update skip files to only include files that still exist locally
@@ -109,20 +107,21 @@ async function getFileLists(
     console.log("[syncCmd] skipFiles:", state.skipFiles);
   }
 
-  return { localFiles, remoteFiles, remoteMap };
+  return { localFiles, remoteFilePathToHashMap };
 }
 
-// TODO: refactor, what is this doing?
+// TODO: refactor, do not download the whole file: store file info (metadata) with timestamp and compare states accordingly
+// TODO: remoteFilePathToHashMap vs remoteFiles?
 async function resolveFileConflicts(
   context: SyncContext,
   localFiles: string[],
-  remoteMap: Record<string, string>,
+  remoteFilePathToHashMap: Record<string, string>,
   lastSyncTime: number,
-): Promise<{ toUpload: string[]; toPullConflict: string[] }> {
-  const toUpload: string[] = [];
+): Promise<{ toUpdate: string[]; toPullConflict: string[] }> {
+  const toUpdate: string[] = [];
   const toPullConflict: string[] = [];
 
-  for (const f of localFiles.filter(f => remoteMap[f])) {
+  for (const f of localFiles.filter(f => remoteFilePathToHashMap[f])) {
     const abs = path.join(context.localDir, f);
     const [localBuf, remoteBuf] = await Promise.all([
       fs.readFile(abs),
@@ -133,7 +132,7 @@ async function resolveFileConflicts(
       const stat = await fs.stat(abs);
       if (stat.mtimeMs >= lastSyncTime) {
         console.log(`🔄 Local newer → will upload ${f}`);
-        toUpload.push(f);
+        toUpdate.push(f);
       } else {
         console.log(`⤵️  Remote newer → will pull ${f}`);
         toPullConflict.push(f);
@@ -141,15 +140,16 @@ async function resolveFileConflicts(
     }
   }
 
-  return { toUpload, toPullConflict };
+  return { toUpdate, toPullConflict };
 }
 
+// TODO: review calculations and optimize
 async function calculateFileOperations(
   context: SyncContext,
   state: State,
   localFiles: string[],
   remoteFiles: string[],
-  remoteMap: Record<string, string>,
+  remoteFilePathToHashMap: Record<string, string>,
 ): Promise<FileOperations> {
   const prevFiles = state.lastFiles || [];
   const prevRemote = state.lastRemoteFiles || [];
@@ -164,28 +164,33 @@ async function calculateFileOperations(
   );
 
   // Files to add (new local files)
-  const toAdd = localFiles.filter(f => !remoteFiles.includes(f) && !toDeleteLocal.includes(f));
+  const toPushLocal = localFiles.filter(f => !remoteFiles.includes(f) && !toDeleteLocal.includes(f));
 
   // Files to delete remotely (removed locally)
   const toDeleteRemote = remoteFiles.filter(f => prevFiles.includes(f) && !localFiles.includes(f));
 
   // Files to pull (new remote files)
-  const toPullGeneral = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f));
+  const toPullNewRemote = remoteFiles.filter(f => !localFiles.includes(f) && !prevFiles.includes(f));
 
   // Resolve conflicts for existing files
-  const { toUpload, toPullConflict } = await resolveFileConflicts(context, localFiles, remoteMap, lastSyncTime);
+  const { toUpdate, toPullConflict } = await resolveFileConflicts(
+    context,
+    localFiles,
+    remoteFilePathToHashMap,
+    lastSyncTime,
+  );
 
-  const toPull = Array.from(new Set([...toPullGeneral, ...toPullConflict]));
+  const toPull = Array.from(new Set([...toPullNewRemote, ...toPullConflict]));
 
   console.log("[syncCmd] toDeleteLocal (remote deletions):", toDeleteLocal);
-  console.log("[syncCmd] toAdd:", toAdd);
+  console.log("[syncCmd] toAdd:", toPushLocal);
   console.log("[syncCmd] toDeleteRemote:", toDeleteRemote);
   console.log("[syncCmd] toPull:", toPull);
-  console.log("[syncCmd] toUpload:", toUpload);
+  console.log("[syncCmd] toUpdate:", toUpdate);
 
   return {
-    toAdd,
-    toUpload,
+    toAdd: toPushLocal,
+    toUpdate,
     toPull,
     toDeleteLocal,
     toDeleteRemote,
@@ -198,7 +203,7 @@ async function checkCapacityAndOptimize(
   operations: FileOperations,
   state: State,
 ): Promise<FileOperations> {
-  const candidates = [...operations.toAdd, ...operations.toUpload];
+  const candidates = [...operations.toAdd, ...operations.toUpdate];
 
   if (candidates.length === 0) {
     return operations;
@@ -238,7 +243,7 @@ async function checkCapacityAndOptimize(
     // Filter operations to exclude skipped files
     operations.toDeleteLocal = operations.toDeleteLocal.filter(f => !skipped.includes(f));
     operations.toAdd = operations.toAdd.filter(f => willUpload.has(f));
-    operations.toUpload = operations.toUpload.filter(f => willUpload.has(f));
+    operations.toUpdate = operations.toUpdate.filter(f => willUpload.has(f));
     operations.toSkip = skipped;
   }
 
@@ -251,7 +256,7 @@ function hasOperations(operations: FileOperations): boolean {
     operations.toDeleteLocal.length > 0 ||
     operations.toDeleteRemote.length > 0 ||
     operations.toPull.length > 0 ||
-    operations.toUpload.length > 0
+    operations.toUpdate.length > 0
   );
 }
 
@@ -303,23 +308,23 @@ async function executeFileAdditions(context: SyncContext, operations: FileOperat
   return succeededAdds;
 }
 
-async function executeFileUploads(context: SyncContext, operations: FileOperations): Promise<string[]> {
-  const succeededUploads: string[] = [];
+async function executeFileUpdates(context: SyncContext, operations: FileOperations): Promise<string[]> {
+  const succeededUpdates: string[] = [];
 
-  for (const f of operations.toUpload) {
-    console.log("⬆️  Upload →", f);
+  for (const f of operations.toUpdate) {
+    console.log("⬆️  Update →", f);
     try {
       // Remove old version first
       await updateManifest(context.bee, context.batchID, context.root, "", f, true);
       // Add new version
       await updateManifest(context.bee, context.batchID, context.root, path.join(context.localDir, f), f, false);
-      succeededUploads.push(f);
+      succeededUpdates.push(f);
     } catch (err: any) {
       console.error(`Error updating "${f}":`, err.message);
     }
   }
 
-  return succeededUploads;
+  return succeededUpdates;
 }
 
 async function executeRemoteDeletions(context: SyncContext, operations: FileOperations): Promise<void> {
@@ -358,14 +363,16 @@ async function updateFinalState(state: State, localFiles: string[], remoteFiles:
   state.lastFiles = localFiles;
   state.lastRemoteFiles = remoteFiles;
   state.lastSync = new Date().toISOString();
+
   await saveState(state);
 }
 
 export async function syncCmd(): Promise<void> {
   const { context, state } = await initializeSyncContext();
-  const { localFiles, remoteFiles, remoteMap } = await getFileLists(context, state);
+  const { localFiles, remoteFilePathToHashMap } = await getFileLists(context, state);
+  const remoteFiles = Object.keys(remoteFilePathToHashMap);
 
-  let operations = await calculateFileOperations(context, state, localFiles, remoteFiles, remoteMap);
+  let operations = await calculateFileOperations(context, state, localFiles, remoteFiles, remoteFilePathToHashMap);
   operations = await checkCapacityAndOptimize(context, operations, state);
 
   if (!hasOperations(operations)) {
@@ -384,13 +391,13 @@ export async function syncCmd(): Promise<void> {
   const succeededAdds = await executeFileAdditions(context, operations);
 
   // 4. Upload modified files to remote
-  const succeededUploads = await executeFileUploads(context, operations);
+  const succeededUpdates = await executeFileUpdates(context, operations);
 
   // 5. Delete files from remote
   await executeRemoteDeletions(context, operations);
 
   // 6. Save manifest and update feed
-  await saveManifestAndUpdateFeed(context, succeededAdds, succeededUploads, operations);
+  await saveManifestAndUpdateFeed(context, succeededAdds, succeededUpdates, operations);
 
   // 7. Update and save final state
   await updateFinalState(state, localFiles, remoteFiles);

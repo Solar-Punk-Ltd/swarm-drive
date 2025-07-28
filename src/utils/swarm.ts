@@ -132,6 +132,7 @@ export async function updateManifest(
   }
 }
 
+// path to hash mapping
 export async function listRemoteFilesMap(node: MantarayNode): Promise<Record<string, string>> {
   const nodesMap = node.collectAndMap();
   const out: Record<string, string> = {};
