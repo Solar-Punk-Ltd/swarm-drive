@@ -135,7 +135,7 @@ describe("sync command – latest remote-only implementation", () => {
     await fs.writeFile(path.join(tmp, "b.txt"), "old");
     (swarm.readDriveFeed as jest.Mock).mockResolvedValueOnce(NOT_FOUND_FEED_RESULT);
     (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(undefined);
-    (swarm.saveMantarayNode as jest.Mock).mockResolvedValue(DUMMY_REF);
+    (swarm.saveMantarayNode as jest.Mock).mockResolvedValueOnce(DUMMY_REF);
 
     await syncCmd();
 
@@ -155,13 +155,13 @@ describe("sync command – latest remote-only implementation", () => {
     const REMOVED_REF = "c".repeat(64);
     const NEW_REF = "d".repeat(64);
     (swarm.updateManifest as jest.Mock).mockResolvedValueOnce(REMOVED_REF).mockResolvedValueOnce(NEW_REF);
-    (swarm.saveMantarayNode as jest.Mock).mockResolvedValue(NEW_REF);
+    (swarm.saveMantarayNode as jest.Mock).mockResolvedValueOnce(NEW_REF);
 
+    await new Promise(resolve => setTimeout(resolve, 100));
     await fs.writeFile(path.join(tmp, "b.txt"), "new");
     await syncCmd();
 
-    // TODO: somehow github CI fails here with length 1
-    // expect((swarm.updateManifest as jest.Mock).mock.calls).toHaveLength(3);
+    expect((swarm.updateManifest as jest.Mock).mock.calls).toHaveLength(3);
 
     expect(swarm.writeDriveFeed).toHaveBeenLastCalledWith(
       dummyBee,
